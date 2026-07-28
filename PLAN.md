@@ -68,9 +68,12 @@ Holds sensitive data, so "nobody but me" security is first-class.
 - [x] **Committed + pushed** (deploy is from `main`).
 
 **P2 — Mobile & polish (make it feel premium on a phone)**
-- [ ] **Mobile UI pass** — 6-item bottom nav is tight → group or add a "More" tab; convert dense tables
-      (holdings, overlap matrix) to **card lists / horizontal scroll** on mobile; bigger touch targets;
-      verify dialogs fit; test 375px across every page.
+- [x] **Mobile UI pass (2026-07-07)** — safe-area-inset-bottom on the fixed bottom nav + main content
+      (notched iPhones); bumped icon-sm→icon touch targets in shared dialog triggers; **holdings table**
+      now has a real mobile card-list view (`hidden md:block` table / `md:hidden` cards + native sort
+      select); **funds overlap matrix** — fixed `w-full` bug that defeated horizontal scroll on many
+      funds, switched to `w-max` + `min-w-14` + a scroll hint. Verified tsc/build/tests green + curled
+      real authenticated pages via a temp seeded session (cleaned up after).
 - [ ] **PWA** — `manifest.webmanifest` (name, theme color, icons 192/512, standalone), app icons,
       lightweight service worker for install + offline app-shell; "Add to Home Screen".
 - [ ] **Landing page** — a public `/` (or `/welcome`) before login: product intro, screenshots, "Sign in"

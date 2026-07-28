@@ -53,7 +53,7 @@ export function FormDialog({
       ) : (
         <Button
           variant="ghost"
-          size="icon-sm"
+          size="icon"
           aria-label={label}
           onClick={() => setOpen(true)}
         >

@@ -10,6 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { selectClass } from "@/components/forms/fields";
 import {
   formatInr,
   formatNative,
@@ -107,7 +108,95 @@ export function HoldingsTable({ holdings: initialHoldings }: { holdings: Holding
   };
 
   return (
-    <div className="border-border overflow-x-auto rounded-xl border">
+    <>
+      {/* Mobile: sort control + card list (columns don't fit at phone widths). */}
+      <div className="flex flex-col gap-3 md:hidden">
+        <select
+          value={`${sortField}:${sortOrder}`}
+          onChange={(e) => {
+            const [field, order] = e.target.value.split(":") as [
+              SortField,
+              SortOrder,
+            ];
+            setSortField(field);
+            setSortOrder(order);
+          }}
+          className={selectClass}
+          aria-label="Sort holdings by"
+        >
+          <option value="weight:desc">Sort: Weight (high to low)</option>
+          <option value="value:desc">Sort: Value (high to low)</option>
+          <option value="pnl:desc">Sort: P/L (best first)</option>
+          <option value="pnl:asc">Sort: P/L (worst first)</option>
+          <option value="name:asc">Sort: Name (A–Z)</option>
+          <option value="source:asc">Sort: Source</option>
+        </select>
+
+        <div className="flex flex-col gap-2">
+          {sortedHoldings.map((h) => (
+            <div
+              key={h.id}
+              className="border-border rounded-xl border p-3.5"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 items-start gap-2">
+                  <Badge
+                    variant="secondary"
+                    className="mt-0.5 font-mono text-[10px]"
+                  >
+                    {TYPE_BADGE[h.type]}
+                  </Badge>
+                  <div className="min-w-0">
+                    <div className="truncate font-medium">{h.name}</div>
+                    <div className="text-muted-foreground font-mono text-xs">
+                      {h.symbol} · {h.source.replace("_", " ")}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-0.5">
+                  <HoldingFormDialog
+                    mode="edit"
+                    initial={h}
+                    trigger="icon"
+                    label="Edit holding"
+                  />
+                  <DeleteHoldingDialog id={h.id} name={h.name} />
+                </div>
+              </div>
+
+              <div className="text-muted-foreground mt-3 flex justify-between text-xs">
+                <span>
+                  Qty {formatQuantity(h.quantity)} · Avg{" "}
+                  {formatNative(h.avgBuyPrice, h.currency)}
+                </span>
+                <span>{h.weightPct.toFixed(1)}% of portfolio</span>
+              </div>
+
+              <div className="mt-2 flex items-end justify-between">
+                <div>
+                  <div className="font-semibold tabular-nums">
+                    {formatInr(h.currentValueInr)}
+                  </div>
+                  {!h.hasLivePrice && (
+                    <div className="text-muted-foreground text-[10px]">
+                      cost basis
+                    </div>
+                  )}
+                </div>
+                <div
+                  className={`text-right text-sm tabular-nums ${pnlClass(h.pnlInr)}`}
+                >
+                  <div>{formatSignedInr(h.pnlInr)}</div>
+                  <div className="text-xs">{formatPct(h.pnlPct)}</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Desktop: full sortable table. */}
+      <div className="border-border hidden overflow-x-auto rounded-xl border md:block">
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
@@ -194,6 +283,7 @@ export function HoldingsTable({ holdings: initialHoldings }: { holdings: Holding
           ))}
         </TableBody>
       </Table>
-    </div>
+      </div>
+    </>
   );
 }

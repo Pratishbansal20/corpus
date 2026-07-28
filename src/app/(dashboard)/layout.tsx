@@ -21,7 +21,9 @@ export default async function DashboardLayout({
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <TopbarShell user={user} pricingStatus={pricingStatus} />
-        <main className="flex-1 px-5 pb-24 pt-6 md:px-8 md:pb-10">
+        {/* Bottom padding clears the fixed mobile nav plus its safe-area
+            inset (notched iPhones); md+ drops back to a plain pb-10. */}
+        <main className="flex-1 px-5 pt-6 pb-[calc(6rem+env(safe-area-inset-bottom))] md:px-8 md:pb-10">
           {children}
         </main>
       </div>

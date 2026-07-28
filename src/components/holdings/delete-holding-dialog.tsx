@@ -37,7 +37,7 @@ export function DeleteHoldingDialog({
     <Dialog open={open} onOpenChange={(o) => setOpen(o)}>
       <Button
         variant="ghost"
-        size="icon-sm"
+        size="icon"
         aria-label="Delete holding"
         className="text-muted-foreground hover:text-loss"
         onClick={() => setOpen(true)}

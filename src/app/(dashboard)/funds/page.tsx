@@ -135,11 +135,18 @@ export default async function FundsPage() {
               Shared holdings between funds — higher = more duplication
             </CardDescription>
           </CardHeader>
-          <CardContent className="overflow-x-auto">
-            <OverlapMatrix
-              funds={withData.map((f) => ({ id: f.instrumentId, name: f.name }))}
-              overlaps={analysis.overlaps}
-            />
+          <CardContent>
+            {withData.length > 3 && (
+              <p className="text-muted-foreground mb-2 text-xs sm:hidden">
+                Scroll horizontally to see all funds →
+              </p>
+            )}
+            <div className="overflow-x-auto">
+              <OverlapMatrix
+                funds={withData.map((f) => ({ id: f.instrumentId, name: f.name }))}
+                overlaps={analysis.overlaps}
+              />
+            </div>
           </CardContent>
         </Card>
       )}
@@ -194,14 +201,17 @@ function OverlapMatrix({
     name.replace(/ (Fund|Direct|Growth|Plan|Cap).*$/i, "").slice(0, 14);
 
   return (
-    <table className="w-full border-separate border-spacing-1 text-xs">
+    // w-max (not w-full) so the table sizes to its content and the parent's
+    // overflow-x-auto actually scrolls on narrow screens instead of squishing
+    // every column to fit — illegible once there are more than ~4 funds.
+    <table className="w-max border-separate border-spacing-1 text-xs">
       <thead>
         <tr>
           <th className="text-left font-normal" />
           {funds.map((f) => (
             <th
               key={f.id}
-              className="text-muted-foreground px-1 text-center font-normal"
+              className="text-muted-foreground min-w-14 px-1 text-center font-normal"
             >
               {short(f.name)}
             </th>
@@ -219,7 +229,7 @@ function OverlapMatrix({
                 return (
                   <td
                     key={col.id}
-                    className="text-muted-foreground/40 text-center"
+                    className="text-muted-foreground/40 min-w-14 text-center"
                   >
                     —
                   </td>
@@ -229,7 +239,7 @@ function OverlapMatrix({
               return (
                 <td
                   key={col.id}
-                  className="rounded-md text-center tabular-nums"
+                  className="min-w-14 rounded-md text-center tabular-nums"
                   style={{ background: overlapColor(pct) }}
                 >
                   {pct.toFixed(0)}%
