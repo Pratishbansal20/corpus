@@ -5,7 +5,7 @@ import { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/require-user";
 import type { FormActionState } from "@/lib/forms/action-state";
-import { sipSchema, nextDateForDay } from "./schema";
+import { sipSchema, nextSipDate } from "./schema";
 
 function revalidateSips() {
   revalidatePath("/holdings");
@@ -54,7 +54,7 @@ export async function saveSip(
     amountInr: new Prisma.Decimal(String(d.amountInr)),
     frequency: d.frequency,
     dayOfMonth: d.dayOfMonth,
-    nextDate: nextDateForDay(d.dayOfMonth),
+    nextDate: nextSipDate(d.dayOfMonth),
     source,
   };
 

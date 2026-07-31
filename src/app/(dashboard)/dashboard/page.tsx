@@ -44,6 +44,7 @@ import { SectionHeading } from "@/components/layout/section-heading";
 const dateFmt = new Intl.DateTimeFormat("en-IN", {
   day: "numeric",
   month: "short",
+  timeZone: "UTC",
 });
 
 function pnlClass(value: number): string {

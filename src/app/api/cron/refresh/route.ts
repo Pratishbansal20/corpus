@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { refreshPortfolioPrices } from "@/lib/portfolio/refresh";
 import { refreshFundHoldings } from "@/lib/funds/refresh";
+import { rollForwardSipDates } from "@/lib/sips/queries";
 import { writeDailyNetWorthSnapshot } from "@/lib/networth/snapshot";
 
 // Uses the pg adapter (Node): must not run on the edge.
@@ -27,6 +28,9 @@ export async function GET(request: Request) {
   // Refresh mutual-fund constituents (graceful: keeps previous on failure).
   const funds = await refreshFundHoldings();
 
+  // Advance any SIP date that has passed.
+  const sipsRolled = await rollForwardSipDates();
+
   const users = await prisma.user.findMany({ select: { id: true } });
   for (const u of users) {
     await writeDailyNetWorthSnapshot(u.id);
@@ -38,6 +42,7 @@ export async function GET(request: Request) {
     fxUpdated: result.fxUpdated,
     fundsUpdated: funds.updated,
     fundsFailed: funds.failed,
+    sipsRolled,
     snapshots: users.length,
     errors: result.errors,
     refreshedAt: result.refreshedAt,

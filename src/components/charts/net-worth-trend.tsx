@@ -33,6 +33,7 @@ function TrendTooltip({
 const labelFmt = new Intl.DateTimeFormat("en-IN", {
   day: "numeric",
   month: "short",
+  timeZone: "UTC",
 });
 
 export function NetWorthTrend({ data }: { data: Point[] }) {

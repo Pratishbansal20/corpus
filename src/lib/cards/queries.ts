@@ -36,19 +36,31 @@ export function sumOutstanding(cards: { currentOutstanding: number }[]): number 
   return cards.reduce((a, c) => a + c.currentOutstanding, 0);
 }
 
+// Calendar dates are held at UTC midnight and rendered with timeZone: "UTC",
+// so a due date means the same day whether the code runs on a local IST
+// machine or on Vercel. Building them at local midnight stored 18:30 the
+// previous day for IST and rendered a day early on a UTC server.
 function startOfDay(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  return new Date(
+    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()),
+  );
 }
 
-/** Next occurrence of `dueDay` (1–31) on or after today. */
+/** Next occurrence of `dueDay` (1 to 31) on or after today. */
 export function computeNextDueDate(dueDay: number | null): Date | null {
   if (!dueDay) return null;
   const today = startOfDay(new Date());
-  let due = new Date(today.getFullYear(), today.getMonth(), dueDay);
-  if (due < today) {
-    due = new Date(today.getFullYear(), today.getMonth() + 1, dueDay);
-  }
-  return due;
+  const y = today.getUTCFullYear();
+  const m = today.getUTCMonth();
+
+  // Day 0 of the next month is the last day of this one, so a card due on the
+  // 31st falls on the 30th in April.
+  const clamp = (year: number, monthIndex: number) =>
+    Math.min(dueDay, new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate());
+
+  const thisMonth = new Date(Date.UTC(y, m, clamp(y, m)));
+  if (thisMonth >= today) return thisMonth;
+  return new Date(Date.UTC(y, m + 1, clamp(y, m + 1)));
 }
 
 /** Effective due date: explicit `currentDueDate`, else derived from `dueDay`. */

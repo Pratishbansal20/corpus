@@ -75,6 +75,20 @@ Holds sensitive data, so "nobody but me" security is first-class.
 - [x] **Logo**: ring of five arcs with one heavier brass arc closing it, plus `src/app/icon.svg`.
 - [x] Aggregates format in whole rupees. Every em dash removed from copy and comments.
 
+### Bug fix (2026-07-31): SIP dates never refreshed
+Two bugs, both fixed:
+1. `nextDate` was only written by `saveSip`, so it froze at whatever was computed when the plan
+   was last edited. Every SIP was showing a date in the past. `getSipPlans` now derives the next
+   date from `dayOfMonth` on every read, so it cannot go stale, and the daily cron calls
+   `rollForwardSipDates()` to keep the stored column in step.
+2. Dates were built at *local* midnight, which under IST stored 18:30 the previous day and then
+   rendered a day early on a UTC server (a SIP on the 25th displayed as the 24th). Calendar dates
+   are now built with `Date.UTC` and rendered with `timeZone: "UTC"`. The same latent bug in
+   credit-card due dates was fixed at the same time, along with month-length clamping so a due
+   date on the 31st lands correctly in short months.
+
+Covered by 6 new tests in `src/lib/sips/schema.test.ts`.
+
 ---
 
 ## 🔲 Remaining backlog

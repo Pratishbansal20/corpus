@@ -24,6 +24,7 @@ import { DeleteDialog } from "@/components/forms/delete-dialog";
 const dateFmt = new Intl.DateTimeFormat("en-IN", {
   day: "numeric",
   month: "short",
+  timeZone: "UTC",
 });
 
 function cardLabel(issuer: string, nickname: string | null): string {

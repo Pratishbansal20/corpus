@@ -20,6 +20,7 @@ import { SipDialog } from "./sip-dialog";
 const dateFmt = new Intl.DateTimeFormat("en-IN", {
   day: "numeric",
   month: "short",
+  timeZone: "UTC",
 });
 
 export function SipSection({ sips }: { sips: SipView[] }) {

@@ -23,15 +23,40 @@ export const sipSchema = z.object({
 export type SipValues = z.infer<typeof sipSchema>;
 
 // Next occurrence (today or later) of the given day-of-month, clamped to month length.
-export function nextDateForDay(dayOfMonth: number, from = new Date()): Date {
-  const clamp = (year: number, month: number) => {
-    const lastDay = new Date(year, month + 1, 0).getDate();
+/**
+ * The next date on or after `from` whose day of month matches `dayOfMonth`,
+ * clamped to the length of the month (a SIP on the 31st debits on the 30th in
+ * April, and on the 28th or 29th in February).
+ *
+ * Built entirely in UTC. Constructing these at local midnight stored a time of
+ * 18:30 the previous day for IST, which then rendered a day early on a UTC
+ * server: a SIP on the 25th showed as the 24th in production.
+ *
+ * Note on cadence: only the day of month is stored, with no start date to
+ * anchor from, so WEEKLY and QUARTERLY plans currently resolve to the same
+ * monthly rule. Real cadence needs the transaction dates described in Phase 2
+ * of PLAN.md.
+ */
+export function nextSipDate(dayOfMonth: number, from = new Date()): Date {
+  const clampToMonth = (year: number, monthIndex: number) => {
+    // Day 0 of the following month is the last day of this one.
+    const lastDay = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
     return Math.min(dayOfMonth, lastDay);
   };
-  const y = from.getFullYear();
-  const m = from.getMonth();
-  const thisMonth = new Date(y, m, clamp(y, m));
-  if (thisMonth >= new Date(y, m, from.getDate())) return thisMonth;
-  const nm = new Date(y, m + 1, 1);
-  return new Date(nm.getFullYear(), nm.getMonth(), clamp(nm.getFullYear(), nm.getMonth()));
+
+  // Compare against today's date only, so a SIP due today still counts as due
+  // today rather than rolling to next month.
+  const todayUtc = Date.UTC(
+    from.getUTCFullYear(),
+    from.getUTCMonth(),
+    from.getUTCDate(),
+  );
+
+  const y = from.getUTCFullYear();
+  const m = from.getUTCMonth();
+
+  const thisMonth = Date.UTC(y, m, clampToMonth(y, m));
+  if (thisMonth >= todayUtc) return new Date(thisMonth);
+
+  return new Date(Date.UTC(y, m + 1, clampToMonth(y, m + 1)));
 }

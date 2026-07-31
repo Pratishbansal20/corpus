@@ -1,4 +1,4 @@
-// Portfolio Dashboard — Prisma schema
+// Portfolio Dashboard: Prisma schema
 // Money is always Decimal (never Float). Native currency is stored alongside
 // the base-currency (INR) values plus the FX rate used, so valuations are reproducible.
 
@@ -12,7 +12,7 @@ datasource db {
 }
 
 // ---------------------------------------------------------------------------
-// Auth.js (NextAuth) standard models — wired up in Milestone 2 (Google OAuth)
+// Auth.js (NextAuth) standard models: wired up in Milestone 2 (Google OAuth)
 // ---------------------------------------------------------------------------
 
 model User {
@@ -172,8 +172,8 @@ model FxRate {
   @@index([base, quote, asOf])
 }
 
-// Daily snapshot of a user's total portfolio value — powers the performance curve.
-// Daily snapshot of a user's finances — powers the net-worth trend chart.
+// Daily snapshot of a user's total portfolio value: powers the performance curve.
+// Daily snapshot of a user's finances: powers the net-worth trend chart.
 // asOf is normalized to start-of-day so there's one upserted row per day.
 model PortfolioSnapshot {
   id           String   @id @default(cuid())
@@ -246,7 +246,7 @@ model BankAccount {
   last4       String?
   balanceInr  Decimal         @db.Decimal(20, 2)
   asOf        DateTime        @default(now())
-  // AES-256-GCM ciphertext (iv:authTag:ciphertext) — never plaintext.
+  // AES-256-GCM ciphertext (iv:authTag:ciphertext): never plaintext.
   accountNumberEnc String?
   ifscEnc          String?
   notes       String?
@@ -259,7 +259,7 @@ model BankAccount {
 }
 
 // A credit card (a liability via currentOutstanding) with due-date tracking.
-// NEVER stores the full PAN or CVV — last 4 only.
+// NEVER stores the full PAN or CVV: last 4 only.
 model CreditCard {
   id                String      @id @default(cuid())
   userId            String
