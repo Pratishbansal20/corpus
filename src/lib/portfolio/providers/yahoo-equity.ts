@@ -73,7 +73,7 @@ export const yahooEquityProvider: PriceProvider = {
     );
     if (stocks.length === 0) return [];
 
-    // Sequential fetches — Yahoo rate-limits aggressive parallel bursts.
+    // Sequential fetches: Yahoo rate-limits aggressive parallel bursts.
     const quotes: PriceQuote[] = [];
     for (const inst of stocks) {
       try {

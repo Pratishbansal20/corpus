@@ -92,7 +92,7 @@ export default async function CardsPage() {
                         )}
                       </div>
                       <div className="text-muted-foreground text-xs">
-                        {c.last4 ? `•• ${c.last4}` : "—"}
+                        {c.last4 ? `•• ${c.last4}` : "Not set"}
                         {due && (
                           <>
                             {" · "}
@@ -108,7 +108,7 @@ export default async function CardsPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-1">
-                      <div className="text-right tabular-nums">
+                      <div className="text-right num">
                         <div className="text-sm">{formatInr(c.currentOutstanding)}</div>
                         <div className="text-muted-foreground text-xs">
                           of {formatInr(c.creditLimit)}

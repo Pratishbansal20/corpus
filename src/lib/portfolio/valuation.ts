@@ -18,7 +18,7 @@ export type ValuationInput = {
 };
 
 // Serializable, display-ready shape passed to client components (no Decimals
-// cross the RSC boundary — they're converted to numbers here).
+// cross the RSC boundary: they're converted to numbers here).
 export type HoldingView = {
   id: string;
   symbol: string;
@@ -44,7 +44,7 @@ export type PortfolioSummary = {
   pnlInr: number;
   pnlPct: number;
   holdingsCount: number;
-  // Live prices/FX flags — when false, values fall back to cost basis / fallback FX.
+  // Live prices/FX flags: when false, values fall back to cost basis / fallback FX.
   hasLivePrices: boolean;
   fxIsLive: boolean;
 };

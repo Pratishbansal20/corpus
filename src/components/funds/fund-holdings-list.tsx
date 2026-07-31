@@ -31,7 +31,7 @@ export function FundHoldingsList({
                 {c.sector}
               </span>
             </span>
-            <span className="tabular-nums">{c.weightPct.toFixed(1)}%</span>
+            <span className="num">{c.weightPct.toFixed(1)}%</span>
           </div>
         ))}
       </div>

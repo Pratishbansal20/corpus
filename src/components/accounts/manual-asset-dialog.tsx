@@ -23,7 +23,7 @@ export function ManualAssetDialog({
       trigger={trigger}
       label={label}
       title={initial ? "Edit asset" : "Add asset"}
-      description="Cash, FDs, gold, EPF/PPF, property — anything that adds to net worth."
+      description="Cash, FDs, gold, EPF/PPF, property, and anything that adds to net worth."
       submitLabel={initial ? "Save changes" : "Add asset"}
       action={saveManualAsset}
     >

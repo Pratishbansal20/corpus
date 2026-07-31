@@ -1,9 +1,9 @@
 // App-passphrase hashing and verification using scrypt (Node built-in crypto).
-// The passphrase itself is never stored — only its scrypt hash + random salt.
+// The passphrase itself is never stored: only its scrypt hash + random salt.
 
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 
-// scrypt parameters — OWASP-recommended for interactive logins.
+// scrypt parameters: OWASP-recommended for interactive logins.
 const SCRYPT_N = 16384; // CPU/memory cost
 const SCRYPT_R = 8; // block size
 const SCRYPT_P = 1; // parallelization

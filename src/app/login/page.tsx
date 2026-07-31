@@ -1,50 +1,66 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
-import { PieChart } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { auth } from "@/auth";
 import { signInWithGoogle } from "@/lib/auth/actions";
+import { Wordmark } from "@/components/layout/wordmark";
 
 export default async function LoginPage() {
-  // Already signed in? Skip the login screen.
   const session = await auth();
   if (session?.user) redirect("/dashboard");
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden px-6">
-      {/* Subtle ambient glow */}
-      <div
-        aria-hidden
-        className="bg-primary/20 pointer-events-none absolute -top-32 left-1/2 size-[36rem] -translate-x-1/2 rounded-full blur-[140px]"
-      />
+    <div className="flex min-h-screen flex-col">
+      <header className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-5 md:px-8">
+        <Wordmark />
+        <Link
+          href="/"
+          className="text-muted-foreground hover:text-foreground flex items-center gap-1.5 text-xs transition-colors"
+        >
+          <ArrowLeft className="size-3.5" />
+          Back
+        </Link>
+      </header>
 
-      <div className="relative w-full max-w-sm">
-        <div className="mb-8 flex flex-col items-center text-center">
-          <div className="bg-primary/15 text-primary mb-5 flex size-12 items-center justify-center rounded-xl">
-            <PieChart className="size-6" />
-          </div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Welcome to Portfolio
+      <main className="flex flex-1 items-center justify-center px-5 pb-24">
+        <div className="w-full max-w-sm">
+          <p className="eyebrow rise">Sign in</p>
+          <h1
+            className="font-display rise mt-3 text-[2rem] leading-[1.05] font-semibold tracking-[-0.03em]"
+            style={{ "--delay": "60ms" } as React.CSSProperties}
+          >
+            Welcome back.
           </h1>
-          <p className="text-muted-foreground mt-2 text-sm text-balance">
-            All your investments — Indian stocks, mutual funds, and US stocks —
-            in one place.
+          <p
+            className="text-muted-foreground rise mt-3 text-sm leading-relaxed text-balance"
+            style={{ "--delay": "120ms" } as React.CSSProperties}
+          >
+            Only one Google account can sign in here.
           </p>
-        </div>
 
-        <div className="border-border bg-card rounded-xl border p-6 shadow-sm">
-          <form action={signInWithGoogle}>
+          <form
+            action={signInWithGoogle}
+            className="rise mt-8"
+            style={{ "--delay": "180ms" } as React.CSSProperties}
+          >
             <button
               type="submit"
-              className="border-border bg-background hover:bg-accent focus-visible:ring-ring flex w-full items-center justify-center gap-3 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:outline-none"
+              className="border-border bg-card hover:border-primary/40 hover:bg-accent focus-visible:ring-ring flex w-full items-center justify-center gap-3 rounded-lg border px-4 py-3 text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:outline-none"
             >
-              <GoogleIcon className="size-4.5" />
+              <GoogleIcon className="size-[1.15rem]" />
               Continue with Google
             </button>
           </form>
-          <p className="text-muted-foreground mt-4 text-center text-xs text-balance">
-            We only read your name, email, and photo to create your account.
+
+          <p
+            className="text-muted-foreground rise mt-5 text-xs leading-relaxed"
+            style={{ "--delay": "240ms" } as React.CSSProperties}
+          >
+            Corpus reads your name, email and photo to create the account. A
+            passphrase unlocks the session after this step.
           </p>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

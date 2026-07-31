@@ -24,12 +24,21 @@ export function MobileNav() {
           <Link
             key={item.href}
             href={item.href}
+            aria-current={active ? "page" : undefined}
             className={cn(
-              "flex h-16 flex-1 flex-col items-center justify-center gap-1 px-0.5 text-[10.5px] leading-none font-medium whitespace-nowrap transition-colors active:opacity-70",
+              "relative flex h-16 flex-1 flex-col items-center justify-center gap-1.5 px-0.5 text-[10px] leading-none font-medium tracking-tight whitespace-nowrap transition-colors active:opacity-70",
               active ? "text-primary" : "text-muted-foreground",
             )}
           >
-            <Icon className="size-5 shrink-0" />
+            {/* Brass tick above the active tab: matches the sidebar rail. */}
+            <span
+              aria-hidden
+              className={cn(
+                "bg-primary absolute top-0 h-[2px] w-7 rounded-full transition-opacity",
+                active ? "opacity-100" : "opacity-0",
+              )}
+            />
+            <Icon className="size-[1.15rem] shrink-0" />
             {item.label}
           </Link>
         );

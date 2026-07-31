@@ -28,7 +28,7 @@ export type AppConsolidation = {
   totalValueInr: number;
 };
 
-// "Where do my investments live?" — collapse holdings by the app/broker they
+// "Where do my investments live?": collapse holdings by the app/broker they
 // came from, so the user sees Groww vs Paytm Money vs INDmoney at a glance.
 export function consolidateBySource(holdings: HoldingView[]): AppConsolidation {
   const bySource = new Map<string, AppGroup>();

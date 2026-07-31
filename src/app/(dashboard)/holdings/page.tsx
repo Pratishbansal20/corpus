@@ -35,7 +35,7 @@ export default async function HoldingsPage() {
     <div className="mx-auto flex max-w-6xl flex-col gap-6">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight">Investments</h2>
+          <h2 className="font-display text-xl font-semibold tracking-[-0.02em]">Investments</h2>
           <p className="text-muted-foreground text-sm">
             {summary.holdingsCount > 0
               ? `${summary.holdingsCount} position${summary.holdingsCount > 1 ? "s" : ""} · ${formatInr(summary.totalValueInr)}`
@@ -65,10 +65,10 @@ export default async function HoldingsPage() {
                     <div className="text-muted-foreground text-xs">
                       {g.label}
                     </div>
-                    <div className="mt-1 text-lg font-semibold tabular-nums">
+                    <div className="mt-1 text-lg font-semibold num">
                       {formatInr(g.valueInr)}
                     </div>
-                    <div className={`text-xs tabular-nums ${pnlClass(g.pnlInr)}`}>
+                    <div className={`text-xs num ${pnlClass(g.pnlInr)}`}>
                       {formatPct(g.pnlPct)} · {g.weightPct.toFixed(0)}%
                     </div>
                   </div>
@@ -86,7 +86,7 @@ export default async function HoldingsPage() {
           )}
           {!summary.hasLivePrices && holdings.length > 0 && (
             <p className="text-muted-foreground text-xs">
-              Values reflect cost basis until live prices are fetched — tap
+              Values reflect cost basis until live prices are fetched. Tap
               Refresh in the top bar.
             </p>
           )}

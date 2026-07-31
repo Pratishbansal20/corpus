@@ -66,7 +66,7 @@ export function SipSection({ sips }: { sips: SipView[] }) {
                 </div>
                 <div className="flex items-center gap-1">
                   <div className="text-right">
-                    <div className="text-sm tabular-nums">
+                    <div className="text-sm num">
                       {formatInr(s.amountInr)}
                     </div>
                     <div className="text-muted-foreground text-xs">

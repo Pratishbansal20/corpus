@@ -20,7 +20,7 @@ function startOfUtcDay(d = new Date()): Date {
  * Graceful by design: a fund's holdings are deleted and re-inserted **only after**
  * its fresh scrape succeeds, inside a single transaction. If a fetch fails (Groww
  * down, page changed, nothing parsed), that fund is skipped and its previous
- * holdings remain untouched — the analysis never loses data mid-refresh.
+ * holdings remain untouched: the analysis never loses data mid-refresh.
  */
 export async function refreshFundHoldings(): Promise<FundRefreshResult> {
   const updated: string[] = [];
@@ -33,7 +33,7 @@ export async function refreshFundHoldings(): Promise<FundRefreshResult> {
 
   for (const inst of instruments) {
     const slug = GROWW_FUND_SLUGS[inst.symbol];
-    if (!slug) continue; // no mapping — leave any existing data as-is
+    if (!slug) continue; // no mapping: leave any existing data as-is
 
     try {
       const rows = await fetchGrowwHoldings(slug); // throws on failure/empty
@@ -52,7 +52,7 @@ export async function refreshFundHoldings(): Promise<FundRefreshResult> {
       ]);
       updated.push(inst.symbol);
     } catch (e) {
-      // Keep previous holdings — do NOT delete anything on failure.
+      // Keep previous holdings: do NOT delete anything on failure.
       failed.push({
         symbol: inst.symbol,
         error: e instanceof Error ? e.message : "fetch failed",

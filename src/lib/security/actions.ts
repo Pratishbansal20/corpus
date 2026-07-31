@@ -169,7 +169,7 @@ export async function unlockSession(
     where: { userId: user.id! },
   });
   if (!security) {
-    // No passphrase set — shouldn't be on /unlock, redirect away.
+    // No passphrase set: shouldn't be on /unlock, redirect away.
     redirect("/dashboard");
   }
 

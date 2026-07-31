@@ -174,7 +174,7 @@ export function HoldingsTable({ holdings: initialHoldings }: { holdings: Holding
 
               <div className="mt-2 flex items-end justify-between">
                 <div>
-                  <div className="font-semibold tabular-nums">
+                  <div className="font-semibold num">
                     {formatInr(h.currentValueInr)}
                   </div>
                   {!h.hasLivePrice && (
@@ -184,7 +184,7 @@ export function HoldingsTable({ holdings: initialHoldings }: { holdings: Holding
                   )}
                 </div>
                 <div
-                  className={`text-right text-sm tabular-nums ${pnlClass(h.pnlInr)}`}
+                  className={`text-right text-sm num ${pnlClass(h.pnlInr)}`}
                 >
                   <div>{formatSignedInr(h.pnlInr)}</div>
                   <div className="text-xs">{formatPct(h.pnlPct)}</div>
@@ -244,28 +244,28 @@ export function HoldingsTable({ holdings: initialHoldings }: { holdings: Holding
               <TableCell className="text-muted-foreground text-xs">
                 {h.source.replace("_", " ")}
               </TableCell>
-              <TableCell className="text-right tabular-nums">
+              <TableCell className="text-right num">
                 {formatQuantity(h.quantity)}
               </TableCell>
-              <TableCell className="text-right tabular-nums">
+              <TableCell className="text-right num">
                 {formatNative(h.avgBuyPrice, h.currency)}
               </TableCell>
-              <TableCell className="text-right tabular-nums">
+              <TableCell className="text-right num">
                 {formatInr(h.investedInr)}
               </TableCell>
-              <TableCell className="text-right tabular-nums">
+              <TableCell className="text-right num">
                 <div>{formatInr(h.currentValueInr)}</div>
                 {!h.hasLivePrice && (
                   <div className="text-muted-foreground text-[10px]">cost basis</div>
                 )}
               </TableCell>
               <TableCell
-                className={`text-right tabular-nums ${pnlClass(h.pnlInr)}`}
+                className={`text-right num ${pnlClass(h.pnlInr)}`}
               >
                 <div>{formatSignedInr(h.pnlInr)}</div>
                 <div className="text-xs">{formatPct(h.pnlPct)}</div>
               </TableCell>
-              <TableCell className="text-muted-foreground text-right tabular-nums">
+              <TableCell className="text-muted-foreground text-right num">
                 {h.weightPct.toFixed(1)}%
               </TableCell>
               <TableCell>

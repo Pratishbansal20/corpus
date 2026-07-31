@@ -4,7 +4,7 @@ import { buildPortfolio, type Portfolio } from "@/lib/portfolio/valuation";
 
 // Loads a user's holdings, attaches each instrument's latest price (none yet
 // until Milestone 4), and returns the fully-valued portfolio (per-holding views
-// + summary). Always scoped by userId — the only entry point the UI uses.
+// + summary). Always scoped by userId: the only entry point the UI uses.
 export async function getUserPortfolio(userId: string): Promise<Portfolio> {
   const holdings = await prisma.holding.findMany({
     where: { userId },

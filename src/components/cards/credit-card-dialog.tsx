@@ -31,7 +31,7 @@ export function CreditCardDialog({
       trigger={trigger}
       label={label}
       title={initial ? "Edit card" : "Add credit card"}
-      description="Last 4 digits only — never store the full card number or CVV."
+      description="Last 4 digits only. Never store the full card number or CVV."
       submitLabel={initial ? "Save changes" : "Add card"}
       action={saveCreditCard}
     >

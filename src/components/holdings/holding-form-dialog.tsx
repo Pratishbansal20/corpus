@@ -186,7 +186,7 @@ function HoldingFormInner({
           id="externalId"
           name="externalId"
           inputMode="numeric"
-          placeholder="120503 — for mutual fund NAV lookup"
+          placeholder="120503 (for mutual fund NAV lookup)"
           autoComplete="off"
         />
         <FieldError messages={errors?.externalId} />

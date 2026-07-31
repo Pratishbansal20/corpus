@@ -104,7 +104,7 @@ export async function fetchAmfiNavMap(): Promise<Map<string, AmfiRow>> {
   const text = await res.text();
   const map = parseAmfiNavFile(text);
   if (map.size === 0) {
-    throw new Error("AMFI NAV file parsed empty — format may have changed");
+    throw new Error("AMFI NAV file parsed empty: format may have changed");
   }
   return map;
 }

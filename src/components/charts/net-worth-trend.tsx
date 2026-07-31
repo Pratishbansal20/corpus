@@ -25,7 +25,7 @@ function TrendTooltip({
   return (
     <div className="border-border bg-popover rounded-md border px-2.5 py-1.5 text-xs shadow-md">
       <div className="text-muted-foreground">{p.payload?.label}</div>
-      <div className="font-medium tabular-nums">{formatInr(p.value ?? 0)}</div>
+      <div className="font-medium num">{formatInr(p.value ?? 0)}</div>
     </div>
   );
 }

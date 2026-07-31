@@ -1,4 +1,4 @@
-// AES-256-GCM field-level encryption. Server-side only — never import in client
+// AES-256-GCM field-level encryption. Server-side only: never import in client
 // components. Outputs a single string "iv:authTag:ciphertext" (all base64).
 //
 // The 32-byte key lives in ENCRYPTION_KEY (base64-encoded). Example generation:

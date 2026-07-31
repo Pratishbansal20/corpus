@@ -15,7 +15,7 @@ export type FundView = {
   symbol: string;
   valueInr: number;
   constituents: { stock: string; sector: string; weightPct: number }[];
-  coveragePct: number; // Σ of disclosed weights — how much of the fund we have data for
+  coveragePct: number; // Σ of disclosed weights: how much of the fund we have data for
   asOf: string | null;
 };
 

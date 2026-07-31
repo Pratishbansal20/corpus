@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, CalendarClock } from "lucide-react";
+import { ArrowRight, ArrowUpRight } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -16,7 +16,12 @@ import {
   sumBalances,
   sumAssetValues,
 } from "@/lib/accounts/queries";
-import { getCreditCards, sumOutstanding, dueCards } from "@/lib/cards/queries";
+import {
+  getCreditCards,
+  sumOutstanding,
+  dueCards,
+  resolveDueDate,
+} from "@/lib/cards/queries";
 import {
   getLatestCreditScore,
   scoreBand,
@@ -30,20 +35,22 @@ import {
   allocationByAssetClass,
   allocationByCountry,
 } from "@/lib/portfolio/allocation";
-import { formatInr, formatPct } from "@/lib/money";
+import { formatInr, formatPct, formatSignedInr } from "@/lib/money";
 import { NetWorthTrend } from "@/components/charts/net-worth-trend";
 import { AllocationDonut } from "@/components/charts/allocation-donut";
-
-function nwClass(value: number): string {
-  if (value > 0) return "text-foreground";
-  if (value < 0) return "text-loss";
-  return "text-muted-foreground";
-}
+import { CompositionLine } from "@/components/charts/composition-line";
+import { SectionHeading } from "@/components/layout/section-heading";
 
 const dateFmt = new Intl.DateTimeFormat("en-IN", {
   day: "numeric",
   month: "short",
 });
+
+function pnlClass(value: number): string {
+  if (value > 0) return "text-gain";
+  if (value < 0) return "text-loss";
+  return "text-muted-foreground";
+}
 
 export default async function DashboardPage() {
   const user = await requireUser();
@@ -62,7 +69,6 @@ export default async function DashboardPage() {
   const otherAssetsInr = sumAssetValues(assets);
   const cardOutstandingInr = sumOutstanding(cards);
   const investmentsInr = portfolio.summary.totalValueInr;
-  const investmentsInvestedInr = portfolio.summary.investedInr;
 
   const nw = computeNetWorth({
     investmentsInr,
@@ -71,459 +77,365 @@ export default async function DashboardPage() {
     cardOutstandingInr,
   });
 
-  const totalInvestedInr = investmentsInvestedInr + bankInr + otherAssetsInr;
-
   const consolidation = consolidateBySource(portfolio.holdings);
   const allocByClass = allocationByAssetClass(portfolio.holdings);
   const allocByCountry = allocationByCountry(portfolio.holdings);
   const hasInvestments = portfolio.holdings.length > 0;
-  const upcomingSips = sips.filter((s) => s.active).slice(0, 5);
-  const upcomingDues = dueCards(cards).slice(0, 5);
   const monthlySip = monthlySipTotal(sips);
 
-  // Reminders check: identify items that haven't been updated in over 15 days
+  // Change since the previous daily snapshot: the only honest "movement"
+  // figure we have until more history accrues.
+  const changeInr =
+    history.length >= 2
+      ? history[history.length - 1].netWorthInr -
+        history[history.length - 2].netWorthInr
+      : null;
+
+  // One timeline of money about to leave the account, whatever the reason.
+  const upcoming = [
+    ...sips
+      .filter((s) => s.active)
+      .map((s) => ({
+        id: `sip-${s.id}`,
+        kind: "SIP" as const,
+        name: s.fundName,
+        date: s.nextDate,
+        amount: s.amountInr,
+      })),
+    ...dueCards(cards).map((c) => ({
+      id: `card-${c.id}`,
+      kind: "Card due" as const,
+      name: c.nickname ?? c.issuer,
+      date: resolveDueDate(c),
+      amount: c.currentOutstanding,
+    })),
+  ]
+    .sort((a, b) => (a.date?.getTime() ?? 0) - (b.date?.getTime() ?? 0))
+    .slice(0, 6);
+
+  // Stale-data nudges: a balance you typed six weeks ago isn't a balance.
   const STALE_DAYS = 15;
   const staleThreshold = new Date();
   staleThreshold.setDate(staleThreshold.getDate() - STALE_DAYS);
 
   const reminders: { id: string; message: string; href: string }[] = [];
-
-  // 1. Bank accounts check
   const staleBanks = banks.filter((b) => new Date(b.asOf) < staleThreshold);
   if (staleBanks.length > 0) {
     reminders.push({
       id: "banks",
-      message: `${staleBanks.length} bank account balance${staleBanks.length > 1 ? "s" : ""} haven't been updated for 15+ days.`,
+      message: `${staleBanks.length} bank balance${staleBanks.length > 1 ? "s haven't" : " hasn't"} been updated in ${STALE_DAYS} days.`,
       href: "/accounts",
     });
   }
-
-  // 2. Manual assets check
   const staleAssets = assets.filter((a) => new Date(a.asOf) < staleThreshold);
   if (staleAssets.length > 0) {
     reminders.push({
       id: "assets",
-      message: `${staleAssets.length} other asset value${staleAssets.length > 1 ? "s" : ""} haven't been updated for 15+ days.`,
+      message: `${staleAssets.length} asset value${staleAssets.length > 1 ? "s haven't" : " hasn't"} been updated in ${STALE_DAYS} days.`,
       href: "/accounts",
     });
   }
-
-  // 3. Credit score check
   if (creditScore && new Date(creditScore.asOf) < staleThreshold) {
     reminders.push({
       id: "credit",
-      message: `Your credit score was last updated over 15 days ago.`,
+      message: `Your credit score is more than ${STALE_DAYS} days old.`,
       href: "/settings",
     });
   }
 
-  // 4. Cards check
-  const staleCards = cards.filter((c) => new Date(c.utilizationPct >= 0 ? new Date() : new Date()) < staleThreshold); // Cards are usually dynamic but let's check due card dates or static outstanding updates if any
-  
   const everythingEmpty =
     nw.totalAssetsInr === 0 && cardOutstandingInr === 0 && !creditScore;
 
-  if (everythingEmpty) {
-    return <OverviewEmpty name={user.name} />;
-  }
-
-  const composition = [
-    { label: "Investments", value: investmentsInr, href: "/holdings" },
-    { label: "Bank balances", value: bankInr, href: "/accounts" },
-    { label: "Other assets", value: otherAssetsInr, href: "/accounts" },
-  ].filter((c) => c.value > 0);
+  if (everythingEmpty) return <OverviewEmpty name={user.name} />;
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6">
-      {/* Reminders section */}
+    <div className="mx-auto flex max-w-6xl flex-col gap-10">
+      {/* Hero: the number, and where it comes from, on one rule. */}
+      <section className="flex flex-col gap-6">
+        <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
+          <div>
+            <p className="eyebrow">Net worth</p>
+            <p className="font-display mt-2 text-[clamp(2.75rem,8vw,4.25rem)] leading-[0.95] font-semibold tracking-[-0.035em] tabular-nums">
+              {formatInr(nw.netWorthInr)}
+            </p>
+          </div>
+          {changeInr !== null && (
+            <p className={`num text-sm ${pnlClass(changeInr)}`}>
+              {formatSignedInr(changeInr)}{" "}
+              <span className="text-muted-foreground">since yesterday</span>
+            </p>
+          )}
+        </div>
+
+        <CompositionLine
+          segments={[
+            { label: "Investments", value: investmentsInr },
+            { label: "Bank", value: bankInr },
+            { label: "Other assets", value: otherAssetsInr },
+          ]}
+          liabilitiesInr={cardOutstandingInr}
+          liabilitiesLabel="Card outstanding"
+        />
+      </section>
+
       {reminders.length > 0 && (
         <div className="flex flex-col gap-2">
           {reminders.map((r) => (
-            <div
+            <Link
               key={r.id}
-              className="bg-amber-500/10 border-amber-500/20 text-amber-500 flex items-center justify-between rounded-lg border px-4 py-2.5 text-xs font-medium"
+              href={r.href}
+              className="border-primary/25 bg-primary/[0.06] text-primary/90 hover:bg-primary/[0.1] flex items-center justify-between gap-4 rounded-lg border px-4 py-2.5 text-xs transition-colors"
             >
               <span>{r.message}</span>
-              <Link href={r.href} className="underline hover:opacity-80">
-                Update now
-              </Link>
-            </div>
+              <span className="flex shrink-0 items-center gap-1 font-medium">
+                Update <ArrowUpRight className="size-3.5" />
+              </span>
+            </Link>
           ))}
         </div>
       )}
 
-      <p className="text-muted-foreground text-sm">
-        {user.name ? `${user.name.split(" ")[0]}'s` : "Your"} finances, all in
-        one place.
-      </p>
-
-      {/* Hero tiles */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-        <Tile
-          label="Net worth"
-          value={formatInr(nw.netWorthInr)}
-          valueClass={nwClass(nw.netWorthInr)}
-          hint="Assets − liabilities"
+      {/* Quiet stat rail: supporting figures, deliberately not five more cards. */}
+      <section className="border-border grid grid-cols-2 gap-x-6 gap-y-6 border-y py-6 sm:grid-cols-4">
+        <Stat label="Invested" value={formatInr(portfolio.summary.investedInr)} />
+        <Stat
+          label="Returns"
+          value={formatSignedInr(portfolio.summary.pnlInr)}
+          sub={formatPct(portfolio.summary.pnlPct)}
+          tone={pnlClass(portfolio.summary.pnlInr)}
         />
-        <Tile
-          label="Total assets"
-          value={formatInr(nw.totalAssetsInr)}
-          hint="Investments + cash + more"
+        <Stat
+          label="Monthly SIP"
+          value={monthlySip > 0 ? formatInr(monthlySip) : "Not set"}
+          sub={monthlySip > 0 ? `${sips.filter((s) => s.active).length} active` : undefined}
         />
-        <Tile
-          label="Total invested"
-          value={formatInr(totalInvestedInr)}
-          hint="Cost basis of assets"
+        <CreditStat score={creditScore} />
+      </section>
+
+      <section className="flex flex-col gap-4">
+        <SectionHeading
+          title="Net worth over time"
+          hint={
+            history.length >= 2
+              ? "Recorded on each refresh"
+              : "Builds as you refresh"
+          }
         />
-        <Tile
-          label="Liabilities"
-          value={formatInr(nw.totalLiabilitiesInr)}
-          valueClass={nw.totalLiabilitiesInr > 0 ? "text-loss" : undefined}
-          hint="Credit-card outstanding"
-        />
-        <div className="col-span-2 lg:col-span-1">
-          <CreditScoreTile score={creditScore} />
-        </div>
-      </div>
-
-      {/* Net-worth trend */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Net worth over time</CardTitle>
-          <CardDescription>
-            {history.length >= 2
-              ? "Recorded on each price refresh"
-              : "Builds up as you refresh prices"}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {history.length >= 2 ? (
-            <NetWorthTrend data={history} />
-          ) : (
-            <div className="border-border text-muted-foreground flex h-40 items-center justify-center rounded-lg border border-dashed text-sm">
-              Your net-worth history will chart here after a couple of daily
-              refreshes.
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Allocation donuts */}
-      {hasInvestments && (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Allocation by asset class</CardTitle>
-              <CardDescription>How your investments split</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <AllocationDonut
-                data={allocByClass.map((s) => ({
-                  label: s.label,
-                  value: s.valueInr,
-                }))}
-                centerLabel="Invested"
-              />
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Allocation by country</CardTitle>
-              <CardDescription>Geographic exposure</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <AllocationDonut
-                data={allocByCountry.map((s) => ({
-                  label: s.label,
-                  value: s.valueInr,
-                }))}
-                centerLabel="Invested"
-              />
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {/* Composition */}
         <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Asset composition</CardTitle>
-            <CardDescription>What makes up your assets</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            {composition.length === 0 ? (
-              <p className="text-muted-foreground text-sm">No assets yet.</p>
+          <CardContent>
+            {history.length >= 2 ? (
+              <NetWorthTrend data={history} />
             ) : (
-              composition.map((c) => {
-                const pct =
-                  nw.totalAssetsInr > 0
-                    ? (c.value / nw.totalAssetsInr) * 100
-                    : 0;
-                return (
-                  <Link
-                    key={c.label}
-                    href={c.href}
-                    className="group flex flex-col gap-1"
-                  >
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground group-hover:text-foreground">
-                        {c.label}
-                      </span>
-                      <span className="tabular-nums">{formatInr(c.value)}</span>
-                    </div>
-                    <div className="bg-muted h-1.5 w-full overflow-hidden rounded-full">
-                      <div
-                        className="bg-primary h-full rounded-full"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </Link>
-                );
-              })
+              <div className="border-border text-muted-foreground flex h-40 items-center justify-center rounded-lg border border-dashed px-6 text-center text-sm text-balance">
+                Two days of history draws the line. Refresh prices to record
+                today.
+              </div>
             )}
           </CardContent>
         </Card>
+      </section>
 
-        {/* App-wise consolidation */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <CardTitle className="text-base">Where it lives</CardTitle>
-                <CardDescription>Investments by app</CardDescription>
+      {hasInvestments && (
+        <section className="flex flex-col gap-4">
+          <SectionHeading title="Allocation" hint="Investments only" />
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>By asset class</CardTitle>
+                <CardDescription>How your investments split</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <AllocationDonut
+                  data={allocByClass.map((s) => ({
+                    label: s.label,
+                    value: s.valueInr,
+                  }))}
+                  centerLabel="Invested"
+                />
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>By country</CardTitle>
+                <CardDescription>Geographic exposure</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <AllocationDonut
+                  data={allocByCountry.map((s) => ({
+                    label: s.label,
+                    value: s.valueInr,
+                  }))}
+                  centerLabel="Invested"
+                />
+              </CardContent>
+            </Card>
+          </div>
+        </section>
+      )}
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {/* Where it lives */}
+        {consolidation.groups.length > 0 && (
+          <Card>
+            <CardHeader>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <CardTitle>Where it lives</CardTitle>
+                  <CardDescription>Investments by app</CardDescription>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1"
+                  nativeButton={false}
+                  render={<Link href="/holdings" />}
+                >
+                  Details <ArrowRight className="size-4" />
+                </Button>
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="gap-1"
-                nativeButton={false}
-                render={<Link href="/holdings" />}
-              >
-                Details <ArrowRight className="size-4" />
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-1">
-            {consolidation.groups.length === 0 ? (
-              <p className="text-muted-foreground text-sm">
-                No investments yet.
-              </p>
-            ) : (
-              consolidation.groups.map((g) => (
+            </CardHeader>
+            <CardContent className="divide-border flex flex-col divide-y">
+              {consolidation.groups.map((g) => (
                 <div
                   key={g.source}
-                  className="flex items-center justify-between gap-4 py-1.5"
+                  className="flex items-center justify-between gap-4 py-2.5 first:pt-0 last:pb-0"
                 >
                   <div className="min-w-0">
-                    <div className="text-sm font-medium">{g.label}</div>
+                    <div className="truncate text-sm font-medium">{g.label}</div>
                     <div className="text-muted-foreground text-xs">
                       {g.count} holding{g.count > 1 ? "s" : ""} ·{" "}
-                      {g.weightPct.toFixed(0)}%
+                      <span className="num">{g.weightPct.toFixed(0)}%</span>
                     </div>
                   </div>
-                  <div className="text-right tabular-nums">
-                    <div className="text-sm">{formatInr(g.valueInr)}</div>
-                    <div className="text-muted-foreground text-xs">
+                  <div className="text-right">
+                    <div className="num text-sm">{formatInr(g.valueInr)}</div>
+                    <div className={`num text-xs ${pnlClass(g.pnlInr)}`}>
                       {formatPct(g.pnlPct)}
                     </div>
                   </div>
                 </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
+              ))}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* One calendar of money on its way out. */}
+        {upcoming.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Coming up</CardTitle>
+              <CardDescription>SIP debits and card dues</CardDescription>
+            </CardHeader>
+            <CardContent className="divide-border flex flex-col divide-y">
+              {upcoming.map((u) => (
+                <div
+                  key={u.id}
+                  className="flex items-center justify-between gap-4 py-2.5 first:pt-0 last:pb-0"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium">{u.name}</div>
+                    <div className="text-muted-foreground text-xs">
+                      {u.kind}
+                      {u.date ? ` · ${dateFmt.format(u.date)}` : ""}
+                    </div>
+                  </div>
+                  <span
+                    className={`num shrink-0 text-sm ${u.kind === "Card due" ? "text-loss" : ""}`}
+                  >
+                    {formatInr(u.amount)}
+                  </span>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
       </div>
-
-      {/* Upcoming SIPs & card dues */}
-      {(upcomingSips.length > 0 || upcomingDues.length > 0) && (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {upcomingSips.length > 0 && (
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <CardTitle className="text-base">Upcoming SIPs</CardTitle>
-                    <CardDescription>
-                      {formatInr(monthlySip)} / month committed
-                    </CardDescription>
-                  </div>
-                  <CalendarClock className="text-muted-foreground size-5" />
-                </div>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-1">
-                {upcomingSips.map((s) => (
-                  <div
-                    key={s.id}
-                    className="flex items-center justify-between gap-4 py-1.5"
-                  >
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-medium">
-                        {s.fundName}
-                      </div>
-                      <div className="text-muted-foreground text-xs">
-                        {dateFmt.format(s.nextDate)} · day {s.dayOfMonth}
-                      </div>
-                    </div>
-                    <span className="text-sm tabular-nums">
-                      {formatInr(s.amountInr)}
-                    </span>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
-
-          {upcomingDues.length > 0 && (
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <CardTitle className="text-base">Card dues</CardTitle>
-                    <CardDescription>Due within 7 days</CardDescription>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="gap-1"
-                    nativeButton={false}
-                    render={<Link href="/cards" />}
-                  >
-                    Cards <ArrowRight className="size-4" />
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-1">
-                {upcomingDues.map((c) => (
-                  <div
-                    key={c.id}
-                    className="flex items-center justify-between gap-4 py-1.5"
-                  >
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-medium">
-                        {c.nickname ?? c.issuer}
-                        {c.last4 ? ` · •• ${c.last4}` : ""}
-                      </div>
-                      <div className="text-muted-foreground text-xs">
-                        {c.currentDueDate
-                          ? dateFmt.format(c.currentDueDate)
-                          : c.dueDay
-                            ? `Day ${c.dueDay}`
-                            : "—"}
-                      </div>
-                    </div>
-                    <span className="text-loss text-sm tabular-nums">
-                      {formatInr(c.currentOutstanding)}
-                    </span>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      )}
     </div>
   );
 }
 
-function Tile({
+function Stat({
   label,
   value,
-  valueClass,
-  hint,
+  sub,
+  tone,
 }: {
   label: string;
   value: string;
-  valueClass?: string;
-  hint: string;
+  sub?: string;
+  tone?: string;
 }) {
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardDescription>{label}</CardDescription>
-        <CardTitle
-          className={`text-2xl font-semibold tabular-nums ${valueClass ?? ""}`}
-        >
-          {value}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <p className="text-muted-foreground text-xs">{hint}</p>
-      </CardContent>
-    </Card>
+    <div>
+      <p className="eyebrow">{label}</p>
+      <p className={`num mt-1.5 text-lg ${tone ?? ""}`}>{value}</p>
+      {sub && <p className={`num text-xs ${tone ?? "text-muted-foreground"}`}>{sub}</p>}
+    </div>
   );
 }
 
-function CreditScoreTile({
+function CreditStat({
   score,
 }: {
   score: { bureau: keyof typeof CREDIT_BUREAU_LABELS; score: number } | null;
 }) {
   if (!score) {
     return (
-      <Card>
-        <CardHeader className="pb-2">
-          <CardDescription>Credit score</CardDescription>
-          <CardTitle className="text-2xl font-semibold">—</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-muted-foreground text-xs">Add it in Settings</p>
-        </CardContent>
-      </Card>
+      <div>
+        <p className="eyebrow">Credit score</p>
+        <p className="text-muted-foreground mt-1.5 text-lg">Not set</p>
+        <p className="text-muted-foreground text-xs">Add it in Settings</p>
+      </div>
     );
   }
   const band = scoreBand(score.score);
-  const color =
+  const tone =
     band === "excellent" || band === "good"
       ? "text-gain"
       : band === "poor"
         ? "text-loss"
-        : "text-foreground";
+        : "";
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardDescription>Credit score</CardDescription>
-        <CardTitle className={`text-2xl font-semibold tabular-nums ${color}`}>
-          {score.score}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <p className="text-muted-foreground text-xs capitalize">
-          {band} · {CREDIT_BUREAU_LABELS[score.bureau]}
-        </p>
-      </CardContent>
-    </Card>
+    <div>
+      <p className="eyebrow">Credit score</p>
+      <p className={`num mt-1.5 text-lg ${tone}`}>{score.score}</p>
+      <p className="text-muted-foreground text-xs capitalize">
+        {band} · {CREDIT_BUREAU_LABELS[score.bureau]}
+      </p>
+    </div>
   );
 }
 
 function OverviewEmpty({ name }: { name?: string | null }) {
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6">
-      <p className="text-muted-foreground text-sm">
-        Welcome{name ? `, ${name.split(" ")[0]}` : ""} — let&apos;s build your
-        net worth.
-      </p>
-      <div className="border-border flex flex-col items-center justify-center gap-5 rounded-xl border border-dashed px-6 py-16 text-center">
-        <div className="flex flex-col gap-1">
-          <p className="text-lg font-medium">Nothing here yet</p>
-          <p className="text-muted-foreground max-w-sm text-sm text-balance">
-            Add investments, bank balances, and other assets to see your full
-            net worth in one place.
-          </p>
-        </div>
-        <div className="flex flex-wrap justify-center gap-2">
-          <Button nativeButton={false} render={<Link href="/holdings" />}>
-            Add investments
-          </Button>
-          <Button
-            variant="outline"
-            nativeButton={false}
-            render={<Link href="/accounts" />}
-          >
-            Add accounts
-          </Button>
-        </div>
+    <div className="mx-auto flex max-w-2xl flex-col items-center gap-7 py-16 text-center">
+      <div>
+        <p className="eyebrow">Net worth</p>
+        <p className="font-display text-muted-foreground/40 mt-2 text-[clamp(2.75rem,8vw,4.25rem)] leading-none font-semibold tracking-[-0.035em]">
+          ₹0
+        </p>
       </div>
+      <p className="text-muted-foreground max-w-sm text-sm text-balance">
+        Add what you own and the number above starts telling the truth. Holdings
+        first, then bank balances.
+      </p>
+      <div className="flex flex-wrap justify-center gap-2">
+        <Button nativeButton={false} render={<Link href="/holdings" />}>
+          Add investments
+        </Button>
+        <Button
+          variant="outline"
+          nativeButton={false}
+          render={<Link href="/accounts" />}
+        >
+          Add accounts
+        </Button>
+      </div>
+      {name && (
+        <p className="text-muted-foreground/70 text-xs">
+          Signed in as {name.split(" ")[0]}
+        </p>
+      )}
     </div>
   );
 }

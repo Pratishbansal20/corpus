@@ -55,8 +55,8 @@ export default async function SettingsPage() {
           </div>
         </CardHeader>
         <CardContent className="flex flex-col gap-2">
-          <Row label="Name" value={user.name ?? "—"} />
-          <Row label="Email" value={user.email ?? "—"} />
+          <Row label="Name" value={user.name ?? "Not set"} />
+          <Row label="Email" value={user.email ?? "Not set"} />
           <Row
             label="Owner"
             value={
@@ -97,7 +97,7 @@ export default async function SettingsPage() {
         {!hasPp && (
           <CardContent>
             <p className="text-muted-foreground text-xs">
-              Once set, you'll need this passphrase every time you sign in —
+              Once set, you'll need this passphrase every time you sign in,
               on top of Google login. Minimum 6 characters.
             </p>
           </CardContent>
@@ -153,7 +153,7 @@ export default async function SettingsPage() {
                     </div>
                     <div className="flex items-center gap-1">
                       <span
-                        className={`text-lg font-semibold tabular-nums ${bandColor(band)}`}
+                        className={`text-lg font-semibold num ${bandColor(band)}`}
                       >
                         {s.score}
                       </span>

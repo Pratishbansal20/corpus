@@ -99,7 +99,7 @@ export function BankAccountDialog({
           </Field>
           <details className="text-muted-foreground text-xs">
             <summary className="cursor-pointer select-none">
-              Optional — full account details (encrypted)
+              Optional: full account details (encrypted)
             </summary>
             <div className="mt-3 flex flex-col gap-3">
               <Field

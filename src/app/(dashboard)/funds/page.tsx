@@ -48,7 +48,7 @@ export default async function FundsPage() {
     <div className="mx-auto flex max-w-5xl flex-col gap-6">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight">Mutual Funds</h2>
+          <h2 className="font-display text-xl font-semibold tracking-[-0.02em]">Mutual Funds</h2>
           <p className="text-muted-foreground text-sm">
             {formatInr(analysis.totalMfValueInr)} across {analysis.funds.length}{" "}
             fund{analysis.funds.length > 1 ? "s" : ""} ·{" "}
@@ -109,7 +109,7 @@ export default async function FundsPage() {
                       </Badge>
                     )}
                   </span>
-                  <span className="tabular-nums">{formatInr(c.valueInr)}</span>
+                  <span className="num">{formatInr(c.valueInr)}</span>
                 </div>
                 <div className="bg-muted h-1.5 w-full overflow-hidden rounded-full">
                   <div
@@ -132,7 +132,7 @@ export default async function FundsPage() {
           <CardHeader>
             <CardTitle className="text-base">Fund overlap</CardTitle>
             <CardDescription>
-              Shared holdings between funds — higher = more duplication
+              Shared holdings between funds. Higher means more duplication
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -203,7 +203,7 @@ function OverlapMatrix({
   return (
     // w-max (not w-full) so the table sizes to its content and the parent's
     // overflow-x-auto actually scrolls on narrow screens instead of squishing
-    // every column to fit — illegible once there are more than ~4 funds.
+    // every column to fit: illegible once there are more than ~4 funds.
     <table className="w-max border-separate border-spacing-1 text-xs">
       <thead>
         <tr>
@@ -231,7 +231,7 @@ function OverlapMatrix({
                     key={col.id}
                     className="text-muted-foreground/40 min-w-14 text-center"
                   >
-                    —
+                    ·
                   </td>
                 );
               }
@@ -239,7 +239,7 @@ function OverlapMatrix({
               return (
                 <td
                   key={col.id}
-                  className="min-w-14 rounded-md text-center tabular-nums"
+                  className="min-w-14 rounded-md text-center num"
                   style={{ background: overlapColor(pct) }}
                 >
                   {pct.toFixed(0)}%

@@ -42,7 +42,7 @@ export async function requireUnlocked() {
   });
   if (!security) return user;
 
-  // Passphrase exists — check that the current session is unlocked.
+  // Passphrase exists: check that the current session is unlocked.
   const jar = await cookies();
   const sessionToken =
     jar.get(SESSION_COOKIE_PROD)?.value ??

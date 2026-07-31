@@ -2,14 +2,14 @@
 // JSON (each holding carries company_name, nature_name, sector_name, corpus_per).
 // There is no official free API for Indian MF constituents, so this is an
 // unofficial source: fine for low-volume personal use, but it can break if Groww
-// changes their page — callers must degrade gracefully (keep last-good data).
+// changes their page: callers must degrade gracefully (keep last-good data).
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36";
 
 // Pinned instrument-symbol → Groww slug. Pinned (not searched) so we never grab
 // the wrong fund (e.g. a momentum-index variant). Some slugs keep the fund's old
-// name (HDFC "equity", Motilal "midcap-30") — that's Groww's canonical slug.
+// name (HDFC "equity", Motilal "midcap-30"): that's Groww's canonical slug.
 export const GROWW_FUND_SLUGS: Record<string, string> = {
   HDFC_FLEXI: "hdfc-equity-fund-direct-growth",
   NIPPON_SMALL: "nippon-india-small-cap-fund-direct-growth",
@@ -54,7 +54,7 @@ export function parseGrowwHoldings(html: string): ScrapedHolding[] {
   return out;
 }
 
-// Throws on HTTP error or if nothing parsed — so the caller keeps existing data.
+// Throws on HTTP error or if nothing parsed: so the caller keeps existing data.
 export async function fetchGrowwHoldings(
   slug: string,
 ): Promise<ScrapedHolding[]> {

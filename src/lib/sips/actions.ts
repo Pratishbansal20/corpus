@@ -36,7 +36,7 @@ export async function saveSip(
   const d = parsed.data;
   const source = d.source?.trim() || "MANUAL";
 
-  // SIPs are always into mutual funds — find/create that instrument.
+  // SIPs are always into mutual funds: find/create that instrument.
   const instrument = await prisma.instrument.upsert({
     where: { type_symbol: { type: "MUTUAL_FUND", symbol: d.symbol } },
     create: {

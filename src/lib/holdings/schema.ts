@@ -27,7 +27,7 @@ export const holdingFormSchema = z.object({
 
 export type HoldingFormValues = z.infer<typeof holdingFormSchema>;
 
-// Country and native currency are derived from the asset type — the user never
+// Country and native currency are derived from the asset type: the user never
 // has to pick them, which keeps allocation tagging cheap and consistent.
 export function deriveCountryCurrency(type: InstrumentType): {
   country: Country;

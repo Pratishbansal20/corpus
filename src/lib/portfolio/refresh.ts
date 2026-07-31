@@ -65,7 +65,7 @@ async function upsertFx(quote: FxQuote): Promise<void> {
 
 /**
  * Fetch live prices for all held instruments + USD/INR, persist to DB cache.
- * Failures are collected — existing cached prices are never deleted.
+ * Failures are collected: existing cached prices are never deleted.
  */
 export async function refreshPortfolioPrices(): Promise<RefreshResult> {
   const errors: string[] = [];

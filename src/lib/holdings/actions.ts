@@ -110,7 +110,7 @@ export async function updateHolding(
     };
   }
 
-  // Ownership check — never trust the id from the client.
+  // Ownership check: never trust the id from the client.
   const existing = await prisma.holding.findFirst({
     where: { id, userId: user.id },
   });

@@ -65,11 +65,11 @@ export default async function AccountsPage() {
                     </div>
                     <div className="text-muted-foreground text-xs">
                       {b.nickname ? `${b.nickname} · ` : ""}
-                      {b.last4 ? `•• ${b.last4}` : "—"}
+                      {b.last4 ? `•• ${b.last4}` : "Not set"}
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
-                    <span className="tabular-nums">{formatInr(b.balanceInr)}</span>
+                    <span className="num">{formatInr(b.balanceInr)}</span>
                     <BankAccountDialog
                       initial={b}
                       trigger="icon"
@@ -98,7 +98,7 @@ export default async function AccountsPage() {
               <CardDescription>
                 {assets.length > 0
                   ? `${formatInr(sumAssetValues(assets))} in cash, FDs, gold, EPF & more`
-                  : "FDs, gold, EPF/PPF, property — anything else you own."}
+                  : "FDs, gold, EPF/PPF, property, and anything else you own."}
               </CardDescription>
             </div>
             <ManualAssetDialog trigger="primary" label="Add asset" />
@@ -128,7 +128,7 @@ export default async function AccountsPage() {
                     )}
                   </div>
                   <div className="flex items-center gap-1">
-                    <span className="tabular-nums">{formatInr(a.valueInr)}</span>
+                    <span className="num">{formatInr(a.valueInr)}</span>
                     <ManualAssetDialog
                       initial={a}
                       trigger="icon"

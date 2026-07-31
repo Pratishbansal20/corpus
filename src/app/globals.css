@@ -4,12 +4,20 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ---------------------------------------------------------------------------
+   BRASS & INK
+   A private financial instrument. Warm ink panel, antique brass light, paper
+   text. Brass is the brand accent precisely because green and red are spoken
+   for — they mean gain and loss here and nothing else.
+   --------------------------------------------------------------------------- */
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
-  --font-heading: var(--font-sans);
+  --font-heading: var(--font-display);
+  --font-display: var(--font-display);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -43,6 +51,7 @@
   --color-gain-foreground: var(--gain-foreground);
   --color-loss: var(--loss);
   --color-loss-foreground: var(--loss-foreground);
+  --color-brass: var(--primary);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -52,91 +61,151 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-:root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.546 0.215 264);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --gain: oklch(0.62 0.17 152);
-  --gain-foreground: oklch(0.98 0.02 152);
-  --loss: oklch(0.585 0.222 27);
-  --loss-foreground: oklch(0.98 0.02 27);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.546 0.215 264);
-  --chart-1: oklch(0.62 0.19 264);
-  --chart-2: oklch(0.65 0.17 152);
-  --chart-3: oklch(0.72 0.15 75);
-  --chart-4: oklch(0.64 0.21 16);
-  --chart-5: oklch(0.66 0.13 215);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-}
-
+/* The app runs dark-only (html carries `.dark`), so :root and .dark hold the
+   same values — no flash, no half-styled light mode to maintain. */
+:root,
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.645 0.19 264);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --gain: oklch(0.72 0.17 152);
-  --gain-foreground: oklch(0.18 0.04 152);
-  --loss: oklch(0.68 0.2 22);
-  --loss-foreground: oklch(0.18 0.04 22);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.645 0.19 264);
-  --chart-1: oklch(0.67 0.18 264);
-  --chart-2: oklch(0.7 0.16 152);
-  --chart-3: oklch(0.76 0.14 75);
-  --chart-4: oklch(0.68 0.2 16);
-  --chart-5: oklch(0.7 0.12 215);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  /* Ink: a warm near-black, never a blue-black slab. */
+  --background: oklch(0.155 0.008 75);
+  --foreground: oklch(0.935 0.008 80);
+
+  /* Panels sit a touch above the ink, as if lit from above. */
+  --card: oklch(0.196 0.009 75);
+  --card-foreground: oklch(0.935 0.008 80);
+  --popover: oklch(0.213 0.01 75);
+  --popover-foreground: oklch(0.935 0.008 80);
+
+  /* Brass — muted and antique, not bullion-shiny. Used sparingly. */
+  --primary: oklch(0.755 0.105 82);
+  --primary-foreground: oklch(0.17 0.02 75);
+
+  --secondary: oklch(0.263 0.01 75);
+  --secondary-foreground: oklch(0.935 0.008 80);
+  --muted: oklch(0.253 0.009 75);
+  --muted-foreground: oklch(0.665 0.014 80);
+  --accent: oklch(0.27 0.014 78);
+  --accent-foreground: oklch(0.955 0.01 80);
+
+  --destructive: oklch(0.655 0.17 32);
+
+  /* Reserved semantics: these two colours only ever mean money moved. */
+  --gain: oklch(0.755 0.145 156);
+  --gain-foreground: oklch(0.18 0.04 156);
+  --loss: oklch(0.665 0.17 32);
+  --loss-foreground: oklch(0.18 0.04 32);
+
+  --border: oklch(0.98 0.02 80 / 11%);
+  --input: oklch(0.98 0.02 80 / 15%);
+  --ring: oklch(0.755 0.105 82);
+
+  /* Chart hues stay in the warm/earth family so allocation donuts read as one
+     palette, but hold enough hue distance to stay legible side by side. */
+  --chart-1: oklch(0.765 0.108 82);
+  --chart-2: oklch(0.7 0.085 196);
+  --chart-3: oklch(0.645 0.145 38);
+  --chart-4: oklch(0.755 0.075 142);
+  --chart-5: oklch(0.635 0.095 312);
+
+  --radius: 0.5rem;
+
+  --sidebar: oklch(0.175 0.009 75);
+  --sidebar-foreground: oklch(0.935 0.008 80);
+  --sidebar-primary: oklch(0.755 0.105 82);
+  --sidebar-primary-foreground: oklch(0.17 0.02 75);
+  --sidebar-accent: oklch(0.253 0.011 78);
+  --sidebar-accent-foreground: oklch(0.96 0.01 80);
+  --sidebar-border: oklch(0.98 0.02 80 / 10%);
+  --sidebar-ring: oklch(0.755 0.105 82);
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
-  body {
-    @apply bg-background text-foreground;
-  }
+
   html {
     @apply font-sans;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    /* A single soft brass wash at the top edge: light falling on the panel.
+       Fixed so it doesn't travel with scroll. */
+    background-image: radial-gradient(
+      110rem 40rem at 50% -18rem,
+      oklch(0.755 0.105 82 / 9%),
+      transparent 70%
+    );
+    background-attachment: fixed;
+  }
+
+  ::selection {
+    background: oklch(0.755 0.105 82 / 28%);
+  }
+
+  /* Money should never wobble as digits change. */
+  .font-mono,
+  [class*="font-mono"] {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  /* Micro-label above a section or figure. Carries the instrument-panel
+     register: small, wide, quiet. */
+  .eyebrow {
+    @apply text-muted-foreground text-[0.6875rem] font-medium tracking-[0.14em] uppercase;
+  }
+
+  /* Tabular figure. Every rupee amount in a list or table wears this. */
+  .num {
+    @apply font-mono tabular-nums;
+    font-feature-settings: "ss01";
+  }
+}
+
+@layer utilities {
+  /* Landing page entrance: content settles into place once, on load.
+     Stagger with an inline --delay. */
+  @keyframes khata-rise {
+    from {
+      opacity: 0;
+      transform: translateY(0.75rem);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .rise {
+    animation: khata-rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: var(--delay, 0ms);
+  }
+
+  /* The gather lines draw themselves from the sources toward the total. */
+  @keyframes khata-draw {
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+
+  .draw {
+    stroke-dasharray: 220;
+    stroke-dashoffset: 220;
+    animation: khata-draw 1.1s cubic-bezier(0.5, 0, 0.2, 1) both;
+    animation-delay: var(--delay, 0ms);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

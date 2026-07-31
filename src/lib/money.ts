@@ -2,10 +2,14 @@
 // currency); native-currency figures (e.g. a US stock's USD price) are formatted
 // in their own currency for the holdings table.
 
+// Aggregates are shown in whole rupees. Paise are noise on a net worth or a
+// position value, and they make columns of figures harder to scan. Per-unit
+// prices keep their decimals via formatNative().
 const inrFormatter = new Intl.NumberFormat("en-IN", {
   style: "currency",
   currency: "INR",
-  maximumFractionDigits: 2,
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
 });
 
 const inrCompactFormatter = new Intl.NumberFormat("en-IN", {

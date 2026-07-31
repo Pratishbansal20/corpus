@@ -5,7 +5,7 @@ import { prisma } from "@/lib/db/prisma";
 
 // Auth.js v5 reads AUTH_SECRET, AUTH_GOOGLE_ID, and AUTH_GOOGLE_SECRET from env.
 // Database sessions (backed by the Session/Account tables) keep us multi-user-ready
-// and let us revoke sessions server-side — at the cost of a DB hit per request,
+// and let us revoke sessions server-side: at the cost of a DB hit per request,
 // which is fine at personal scale.
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),

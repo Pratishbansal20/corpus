@@ -1,4 +1,4 @@
-// Shared types and labels for credit cards — safe in client components.
+// Shared types and labels for credit cards: safe in client components.
 
 import type { CardNetwork } from "@/generated/prisma";
 
