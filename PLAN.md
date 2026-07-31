@@ -89,6 +89,25 @@ Two bugs, both fixed:
 
 Covered by 6 new tests in `src/lib/sips/schema.test.ts`.
 
+### Bug fix (2026-07-31): mutual funds had never been priced, and were modelled wrong
+- **The AMFI URL was dead.** `portal.amfiindia.com/spp/navAll.aspx` returns 404 and always had,
+  so `fetchAmfiNavMap()` threw on every run and the graceful-degradation path quietly kept the
+  seeded placeholder prices. No mutual fund had ever received a live NAV. Fixed to
+  `https://www.amfiindia.com/spages/NAVAll.txt` (13,979 rows, refreshed daily).
+- **Name matching could pick the wrong fund.** The fallback matched in both directions, so a
+  shorter AMFI name could swallow a longer holding: "Invesco India Midcap" was matchable against
+  "Invesco India Large & Mid Cap". Now one-directional and prefers the shortest match, and all
+  seven funds have `externalId` pinned to their AMFI scheme code so matching is exact.
+- **Holdings were stored as `quantity = 1` with the rupee amount in `avgBuyPrice`.** That only
+  survived because NAVs were broken. The first working refresh would have written a real per-unit
+  NAV against a quantity of 1 and shown a ₹15,323 fund as ₹10. Converted all seven to real units
+  and real average NAV, reconciled to the figures on 31 Jul 2026 (invested ₹53,397, current
+  ₹56,897, returns ₹3,500). Values are now self-updating and survived a live refresh unchanged.
+- **Added a stale-units nudge**: `countStaleMutualFunds()` flags any fund whose units have not
+  changed in 15 days, since NAVs move on their own but a lump-sum purchase has to be entered.
+
+Note: XIRR still cannot be computed (see Phase 2). The 13.41% figure comes from the broker.
+
 ---
 
 ## 🔲 Remaining backlog
@@ -118,6 +137,27 @@ Ordered. Each phase leaves the app deployable.
       - Must render fully assembled and static under `prefers-reduced-motion`.
 - [ ] **Loading and empty states**: skeletons for the Overview tiles, tables and charts. Refresh
       the remaining empty states to the new system.
+
+### Phase 1.5: SIP auto-apply to holdings
+**No, SIP debits do not update holdings today.** A `SipPlan` only stores the schedule. Nothing
+ever adds the purchased units to the `Holding`, so after every debit the app understates units
+and invested until the position is edited by hand. That is why the numbers had drifted about
+₹7,000 below reality by 31 Jul 2026.
+
+Now that mutual funds hold real units and real NAVs, this becomes tractable:
+- [ ] Add a `SipExecution` model (`sipPlanId`, `dueDate`, `amountInr`, `navUsed`, `unitsAdded`,
+      `appliedAt`) with a unique key on `(sipPlanId, dueDate)`. That key is what makes applying
+      idempotent, so a cron that runs twice cannot buy the same units twice.
+- [ ] In the daily cron, for every active plan whose due date has passed and has no execution
+      row: look up the fund's NAV on that date, compute `units = amount / nav`, then
+      `quantity += units` and `avgBuyPrice = (oldInvested + amount) / newQuantity`. Write the
+      execution row in the same transaction.
+- [ ] Degrade gracefully: if no NAV exists for that date (holiday, weekend, missing history),
+      leave the plan alone and retry the next day rather than guessing a price.
+- [ ] Surface it: a small "applied on 5 Aug at NAV 10.12, 494.07 units" line under each SIP, so
+      an automatic change to a money figure is always explained.
+- [ ] Backfill decision: past debits since the plan was created are not recorded anywhere. Either
+      start applying from today only (simple, honest) or let the user enter historical debits.
 
 ### Phase 2: XIRR (needs a schema change first)
 **Blocker found 2026-07-07:** nothing in the database stores *when* an investment was made.

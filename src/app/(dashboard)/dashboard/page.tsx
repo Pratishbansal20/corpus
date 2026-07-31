@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { requireUser } from "@/lib/auth/require-user";
-import { getUserPortfolio } from "@/lib/holdings/queries";
+import { getUserPortfolio, countStaleMutualFunds } from "@/lib/holdings/queries";
 import {
   getBankAccounts,
   getManualAssets,
@@ -55,7 +55,7 @@ function pnlClass(value: number): string {
 
 export default async function DashboardPage() {
   const user = await requireUser();
-  const [portfolio, banks, assets, cards, creditScore, sips, history] =
+  const [portfolio, banks, assets, cards, creditScore, sips, history, staleMfs] =
     await Promise.all([
       getUserPortfolio(user.id),
       getBankAccounts(user.id),
@@ -64,6 +64,7 @@ export default async function DashboardPage() {
       getLatestCreditScore(user.id),
       getSipPlans(user.id),
       getNetWorthHistory(user.id),
+      countStaleMutualFunds(user.id, 15),
     ]);
 
   const bankInr = sumBalances(banks);
@@ -141,6 +142,15 @@ export default async function DashboardPage() {
       id: "credit",
       message: `Your credit score is more than ${STALE_DAYS} days old.`,
       href: "/settings",
+    });
+  }
+  // NAVs update themselves; units do not. Any purchase made outside a SIP has
+  // to be entered by hand, so nudge when the units have sat still for a while.
+  if (staleMfs > 0) {
+    reminders.push({
+      id: "mf-units",
+      message: `${staleMfs} mutual fund${staleMfs > 1 ? "s have" : " has"} not had units updated in ${STALE_DAYS} days. Add any lump-sum purchases.`,
+      href: "/holdings",
     });
   }
 

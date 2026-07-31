@@ -5,6 +5,28 @@ import { buildPortfolio, type Portfolio } from "@/lib/portfolio/valuation";
 // Loads a user's holdings, attaches each instrument's latest price (none yet
 // until Milestone 4), and returns the fully-valued portfolio (per-holding views
 // + summary). Always scoped by userId: the only entry point the UI uses.
+/**
+ * Mutual-fund positions whose units have not been touched in `days`.
+ *
+ * NAVs refresh on their own, but the unit count only changes when the user
+ * edits the holding. A lump-sum purchase outside a SIP therefore goes unnoticed
+ * until it is entered by hand, which is what this nudge is for.
+ */
+export async function countStaleMutualFunds(
+  userId: string,
+  days = 15,
+): Promise<number> {
+  const threshold = new Date();
+  threshold.setDate(threshold.getDate() - days);
+  return prisma.holding.count({
+    where: {
+      userId,
+      instrument: { type: "MUTUAL_FUND" },
+      updatedAt: { lt: threshold },
+    },
+  });
+}
+
 export async function getUserPortfolio(userId: string): Promise<Portfolio> {
   const holdings = await prisma.holding.findMany({
     where: { userId },

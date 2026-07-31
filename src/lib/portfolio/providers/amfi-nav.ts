@@ -7,7 +7,12 @@ import {
   type PriceQuote,
 } from "./types";
 
-const AMFI_NAV_ALL_URL = "https://portal.amfiindia.com/spp/navAll.aspx";
+// AMFI's daily NAV dump for every scheme. The previous value here
+// (portal.amfiindia.com/spp/navAll.aspx) had been returning 404 since before
+// this provider ever ran, so no mutual fund has had a live NAV: every MF price
+// in the database was still the seeded placeholder. This URL 302-redirects,
+// which fetch follows by default.
+const AMFI_NAV_ALL_URL = "https://www.amfiindia.com/spages/NAVAll.txt";
 
 type AmfiRow = {
   schemeCode: string;
@@ -79,16 +84,19 @@ function matchInstrument(
     if (hit) return hit;
   }
 
+  // Name matching is a fallback only, and deliberately one-directional: the
+  // AMFI name must contain ours, never the reverse. Allowing the reverse let a
+  // shorter AMFI name swallow a longer holding, which is how "Invesco India
+  // Midcap" could be priced with "Invesco India Large & Mid Cap" NAV. Pin
+  // externalId to the scheme code to skip this path entirely.
   const target = normalizeName(instrument.name);
   if (!target) return undefined;
 
   let best: AmfiRow | undefined;
   for (const row of byCode.values()) {
-    const candidate = normalizeName(row.name);
-    if (candidate.includes(target) || target.includes(candidate)) {
-      best = row;
-      break;
-    }
+    if (!normalizeName(row.name).includes(target)) continue;
+    // Prefer the shortest match: the closest name wins over a longer variant.
+    if (!best || row.name.length < best.name.length) best = row;
   }
   return best;
 }
