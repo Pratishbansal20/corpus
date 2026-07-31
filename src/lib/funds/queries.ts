@@ -14,6 +14,9 @@ export type FundView = {
   name: string;
   symbol: string;
   valueInr: number;
+  investedInr: number;
+  returnsInr: number;
+  returnsPct: number;
   constituents: { stock: string; sector: string; weightPct: number }[];
   coveragePct: number; // Σ of disclosed weights: how much of the fund we have data for
   asOf: string | null;
@@ -22,6 +25,9 @@ export type FundView = {
 export type FundAnalysis = {
   funds: FundView[];
   totalMfValueInr: number;
+  totalMfInvestedInr: number;
+  totalReturnsInr: number;
+  totalReturnsPct: number;
   fundsWithData: number;
   companies: CompanyExposure[];
   sectors: SectorExposure[];
@@ -48,14 +54,20 @@ export async function getUserFundAnalysis(userId: string): Promise<FundAnalysis>
     if (!latestPrice.has(p.instrumentId)) latestPrice.set(p.instrumentId, p.price.toNumber());
   }
 
-  // Value per fund (sum across the user's holdings of that fund).
+  // Value and cost basis per fund (summed across the user's holdings of it).
   const valueByInstrument = new Map<string, number>();
+  const investedByInstrument = new Map<string, number>();
   for (const h of mfHoldings) {
     const price = latestPrice.get(h.instrumentId) ?? h.avgBuyPrice.toNumber();
-    const v = h.quantity.toNumber() * price;
+    const qty = h.quantity.toNumber();
     valueByInstrument.set(
       h.instrumentId,
-      (valueByInstrument.get(h.instrumentId) ?? 0) + v,
+      (valueByInstrument.get(h.instrumentId) ?? 0) + qty * price,
+    );
+    investedByInstrument.set(
+      h.instrumentId,
+      (investedByInstrument.get(h.instrumentId) ?? 0) +
+        qty * h.avgBuyPrice.toNumber(),
     );
   }
 
@@ -93,11 +105,17 @@ export async function getUserFundAnalysis(userId: string): Promise<FundAnalysis>
     const constituents = (constituentsByFund.get(h.instrumentId) ?? []).sort(
       (a, b) => b.weightPct - a.weightPct,
     );
+    const valueInr = valueByInstrument.get(h.instrumentId) ?? 0;
+    const investedInr = investedByInstrument.get(h.instrumentId) ?? 0;
     funds.push({
       instrumentId: h.instrumentId,
       name: h.instrument.name,
       symbol: h.instrument.symbol,
-      valueInr: valueByInstrument.get(h.instrumentId) ?? 0,
+      valueInr,
+      investedInr,
+      returnsInr: valueInr - investedInr,
+      returnsPct:
+        investedInr > 0 ? ((valueInr - investedInr) / investedInr) * 100 : 0,
       constituents,
       coveragePct: constituents.reduce((a, c) => a + c.weightPct, 0),
       asOf: latestAsOf.has(h.instrumentId)
@@ -108,6 +126,8 @@ export async function getUserFundAnalysis(userId: string): Promise<FundAnalysis>
   funds.sort((a, b) => b.valueInr - a.valueInr);
 
   const totalMfValueInr = funds.reduce((a, f) => a + f.valueInr, 0);
+  const totalMfInvestedInr = funds.reduce((a, f) => a + f.investedInr, 0);
+  const totalReturnsInr = totalMfValueInr - totalMfInvestedInr;
 
   // Analysis only over funds that actually have constituent data.
   const withData: FundConstituents[] = funds
@@ -122,6 +142,10 @@ export async function getUserFundAnalysis(userId: string): Promise<FundAnalysis>
   return {
     funds,
     totalMfValueInr,
+    totalMfInvestedInr,
+    totalReturnsInr,
+    totalReturnsPct:
+      totalMfInvestedInr > 0 ? (totalReturnsInr / totalMfInvestedInr) * 100 : 0,
     fundsWithData: withData.length,
     companies: companyWeightage(withData),
     sectors: sectorWeightage(withData),
