@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { nextSipDate } from "./schema";
+import { nextSipDate, dueDatesBetween } from "./schema";
 
 // Helper: read a date back the way the UI does, in UTC.
 const dayOf = (d: Date) => d.getUTCDate();
@@ -49,5 +49,52 @@ describe("nextSipDate", () => {
     const d = nextSipDate(1, new Date(Date.UTC(2026, 6, 15)));
     expect(dayOf(d)).toBe(1);
     expect(d.getUTCHours()).toBe(0);
+  });
+});
+
+const utc = (y: number, m: number, d: number) => new Date(Date.UTC(y, m, d));
+const iso = (d: Date) => d.toISOString().slice(0, 10);
+
+describe("dueDatesBetween", () => {
+  it("returns the one debit that fell in the window", () => {
+    const dates = dueDatesBetween(4, utc(2026, 6, 31), utc(2026, 7, 10));
+    expect(dates.map(iso)).toEqual(["2026-08-04"]);
+  });
+
+  it("catches up on every debit a missed cron skipped", () => {
+    // The cron not running for three months must not lose two debits.
+    const dates = dueDatesBetween(12, utc(2026, 4, 20), utc(2026, 7, 15));
+    expect(dates.map(iso)).toEqual(["2026-06-12", "2026-07-12", "2026-08-12"]);
+  });
+
+  it("excludes the boundary it starts from, so a debit is never applied twice", () => {
+    // `after` is the last debit already applied: it must not come back.
+    const dates = dueDatesBetween(4, utc(2026, 7, 4), utc(2026, 8, 4));
+    expect(dates.map(iso)).toEqual(["2026-09-04"]);
+  });
+
+  it("includes a debit due today", () => {
+    const dates = dueDatesBetween(2, utc(2026, 6, 15), utc(2026, 7, 2));
+    expect(dates.map(iso)).toEqual(["2026-08-02"]);
+  });
+
+  it("clamps to month length across a short month", () => {
+    // A plan on the 31st debits on the 28th in Feb and the 31st in Mar.
+    const dates = dueDatesBetween(31, utc(2026, 0, 31), utc(2026, 2, 31));
+    expect(dates.map(iso)).toEqual(["2026-02-28", "2026-03-31"]);
+  });
+
+  it("crosses a year boundary", () => {
+    const dates = dueDatesBetween(1, utc(2026, 10, 5), utc(2027, 0, 10));
+    expect(dates.map(iso)).toEqual(["2026-12-01", "2027-01-01"]);
+  });
+
+  it("returns nothing when no debit has come due yet", () => {
+    expect(dueDatesBetween(25, utc(2026, 7, 1), utc(2026, 7, 10))).toEqual([]);
+  });
+
+  it("returns nothing when the window is inverted or empty", () => {
+    expect(dueDatesBetween(4, utc(2026, 7, 10), utc(2026, 7, 1))).toEqual([]);
+    expect(dueDatesBetween(4, utc(2026, 7, 10), utc(2026, 7, 10))).toEqual([]);
   });
 });

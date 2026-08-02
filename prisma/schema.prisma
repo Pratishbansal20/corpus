@@ -253,7 +253,9 @@ model BankAccount {
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sipPlans      SipPlan[]
+  sipExecutions SipExecution[]
 
   @@index([userId])
 }
@@ -292,14 +294,60 @@ model SipPlan {
   nextDate     DateTime
   active       Boolean      @default(true)
   source       String       @default("MANUAL")
+  // The account the mandate debits. Optional: a plan with no bank linked still
+  // buys units, it just cannot show the cash leaving. SetNull on delete so
+  // removing an account unlinks the plan instead of destroying its history.
+  bankAccountId String?
+  // Auto-apply debits to the holding. The escape hatch for a plan whose units
+  // are already kept in step by hand, so the app never buys them twice.
+  autoApply    Boolean      @default(true)
+  // Debits strictly after this date are applied; anything on or before it is
+  // assumed already baked into the holding's quantity. Set to the date the
+  // position was last reconciled against the broker, which is what stops a
+  // first run from retroactively buying months of units that already exist.
+  applyFrom    DateTime?
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
-  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  instrument Instrument @relation(fields: [instrumentId], references: [id], onDelete: Cascade)
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  instrument  Instrument     @relation(fields: [instrumentId], references: [id], onDelete: Cascade)
+  bankAccount BankAccount?   @relation(fields: [bankAccountId], references: [id], onDelete: SetNull)
+  executions  SipExecution[]
 
   @@index([userId])
   @@index([instrumentId])
+  @@index([bankAccountId])
+}
+
+// One applied SIP debit: the audit trail behind an automatic change to a money
+// figure, and the idempotency record that stops a re-run buying the same units.
+//
+// dueDate is the scheduled debit date; navDate is the date whose NAV was
+// actually used to allot units. They differ whenever the debit lands on a
+// weekend or a public holiday, since AMFI only publishes a NAV on business
+// days and allotment happens at the next published NAV.
+model SipExecution {
+  id         String   @id @default(cuid())
+  sipPlanId  String
+  dueDate    DateTime // scheduled debit date, UTC midnight
+  navDate    DateTime // allotment date: the NAV actually used
+  amountInr  Decimal  @db.Decimal(20, 2)
+  navUsed    Decimal  @db.Decimal(20, 6)
+  unitsAdded Decimal  @db.Decimal(20, 6)
+  navSource  String   @default("MFAPI")
+  // Which account the cash actually left, recorded per execution rather than
+  // read back off the plan: re-pointing a SIP at a different bank later must
+  // not rewrite where past debits came from.
+  bankAccountId  String?
+  bankDebitedInr Decimal? @db.Decimal(20, 2)
+  appliedAt      DateTime @default(now())
+
+  sipPlan     SipPlan      @relation(fields: [sipPlanId], references: [id], onDelete: Cascade)
+  bankAccount BankAccount? @relation(fields: [bankAccountId], references: [id], onDelete: SetNull)
+
+  // The idempotency key: a cron that runs twice cannot buy the same units twice.
+  @@unique([sipPlanId, dueDate])
+  @@index([sipPlanId, dueDate])
 }
 
 // Credit score over time; the latest row is the current score.

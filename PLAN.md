@@ -1,6 +1,6 @@
 # Personal Finance Hub: Plan & Status (v3)
 
-_Last updated 2026-07-07. This file is the source of truth for what's built vs. what's next._
+_Last updated 2026-08-02. This file is the source of truth for what's built vs. what's next._
 _Mirrored from the Claude Code plan; kept in-repo so it's openable on GitHub / the Claude app._
 
 ## Context
@@ -20,13 +20,13 @@ Holds sensitive data, so "nobody but me" security is first-class.
 - Next.js 16 (App Router) + TS monolith · PostgreSQL (Neon) + **Prisma 7** (pg adapter,
   `prisma.config.ts`, client → `src/generated/prisma`, gitignored).
 - Auth.js v5 (Google, **database sessions**) · Tailwind v4 + shadcn (base-nova/Base UI) ·
-  **recharts 3.9** · **vitest** (14 tests) · dark-first · money always `Decimal`.
+  **recharts 3.9** · **vitest** (55 tests) · dark-first · money always `Decimal`.
 - **Env vars**: `DATABASE_URL`, `AUTH_SECRET`, `AUTH_GOOGLE_ID/SECRET`, `OWNER_EMAIL`,
   `ENCRYPTION_KEY` (32-byte b64), `PRICE_STALE_HOURS`, `CRON_SECRET`.
 
 ---
 
-## ✅ Delivered (all verified: `tsc` clean, `next build` green, 14 tests pass)
+## ✅ Delivered (all verified: `tsc` clean, `next build` green, 55 tests pass)
 
 - [x] **M1 Setup**: scaffold, shadcn, dark theme, Prisma+Neon, app shell (sidebar/topbar/mobile nav).
 - [x] **M2 Auth**: Google OAuth, DB sessions, `/login`, protected `(dashboard)`, user menu + sign-out.
@@ -54,7 +54,8 @@ Holds sensitive data, so "nobody but me" security is first-class.
 - [x] **Data fix**: QQQ→**QQQM** (Invesco NASDAQ-100), $293.42; P/L now +4.4% (was a bogus +153%).
 
 ### Corrections vs earlier plan (now reality)
-- MF holdings are **scraped from Groww**, not mfdata.in/manual-seed (mfapi.in = NAV-only; mfdata.in down).
+- MF holdings are **scraped from Groww**, not mfdata.in/manual-seed (mfdata.in down). mfapi.in is
+  NAV-only, which is exactly why it now serves the historical NAVs that Phase 1.5 needs.
 - Provider is `GrowwHoldingsProvider`, not the planned `MfHoldingsProvider(mfdata)`.
 
 ---
@@ -74,6 +75,27 @@ Holds sensitive data, so "nobody but me" security is first-class.
       page still states it at the point of action).
 - [x] **Logo**: ring of five arcs with one heavier brass arc closing it, plus `src/app/icon.svg`.
 - [x] Aggregates format in whole rupees. Every em dash removed from copy and comments.
+
+### UI pass (2026-08-02)
+- [x] **Dropdowns were unreadable.** The app is dark-only through CSS variables but never declared
+      `color-scheme`, so every native `<select>` popup was drawn by the browser in the OS *light*
+      scheme: a white list that ignored the palette entirely. Adding `color-scheme: dark` to
+      `:root, .dark` fixes it everywhere at once (popups, scrollbars, date pickers, autofill),
+      with `select option` pinned to the popover tokens for the engines that honour them. The
+      closed control now states its own background and text instead of inheriting platform
+      colours. Measured after the fix: **14.6:1** in the option list, **16.1:1** on the control,
+      both past WCAG AAA.
+- [x] **Net worth over time gets 1M/3M/6M/1Y/3Y/5Y**, top right of the chart. The server had been
+      loading only 90 days, so anything past 3M would have silently shown the same 90 days;
+      `getNetWorthHistory` now defaults to the widest range the chart offers. The window is
+      measured back from the newest recorded point rather than the wall clock, which keeps the
+      component pure (a clock read during render breaks hydration) and means a stale account still
+      shows its own last month instead of an empty chart. A note reads "N days recorded so far"
+      whenever the window is wider than the history, so a young account never looks broken.
+- [x] **Fund overlap scope moved to the top right** of its card header, on the title row where a
+      control governing the whole card belongs, instead of floating above the grid on the left.
+      Both it and the range picker are now the same `Segmented` component rather than two
+      lookalikes that would drift apart.
 
 ### Bug fix (2026-07-31): SIP dates never refreshed
 Two bugs, both fixed:
@@ -108,6 +130,74 @@ Covered by 6 new tests in `src/lib/sips/schema.test.ts`.
 
 Note: XIRR still cannot be computed (see Phase 2). The 13.41% figure comes from the broker.
 
+### ✅ Phase 1.5: SIP auto-apply to holdings (done 2026-08-02)
+SIP debits now update holdings. Previously a `SipPlan` stored only the schedule and nothing added
+the purchased units to the `Holding`, so after every debit the app understated units and invested
+until the position was edited by hand. That is why the numbers had drifted about ₹7,000 below
+reality by 31 Jul 2026.
+
+**The debit date and the allotment date are not the same date.** A debit scheduled for the 1st
+that falls on a Saturday is allotted at Monday's NAV, and the same happens on every public
+holiday. Rather than carry a holiday calendar (which goes stale yearly and still misses
+exchange-specific closures), the rule reads the shift straight off the published NAV series:
+**the allotment NAV is the first NAV published on or after the debit date.** AMFI publishes a NAV
+only on business days, so the series *is* the business-day calendar. Verified against the real
+data: 15 Aug 2025 (Independence Day) and every weekend are simply absent from it.
+
+- [x] `SipExecution` model (`sipPlanId`, `dueDate`, `navDate`, `amountInr`, `navUsed`,
+      `unitsAdded`, `navSource`, `appliedAt`), unique on `(sipPlanId, dueDate)`. That key is what
+      makes applying idempotent, so a cron that runs twice cannot buy the same units twice.
+      `dueDate` and `navDate` are stored separately so the weekend/holiday shift is auditable.
+- [x] **NAV history provider** (`providers/mfapi-nav-history.ts`). The local `Price` table only
+      began at the 31 Jul 2026 fix and held exactly one row per fund, and AMFI's NAVAll.txt is
+      today only, so neither could price a past debit. mfapi.in serves full per-scheme history
+      keyed by the same AMFI scheme code already pinned to `Instrument.externalId`. Retries 3x
+      with a 15s timeout: a cold DNS/TLS handshake failed roughly one run in three without it.
+- [x] Daily cron applies every due, unapplied debit: `units = amount / nav`, `quantity += units`,
+      `avgBuyPrice = (oldInvested + amount) / newQuantity`, execution row written in the same
+      transaction. Runs before the snapshot so recorded net worth includes the new units.
+      Averages are computed from money in, not from the rounded unit count, so invested stays
+      exactly equal to the rupees debited.
+- [x] **Catch-up**: `dueDatesBetween()` yields every scheduled debit in the window, so a cron that
+      misses a fortnight applies both debits in order instead of dropping one.
+- [x] Degrades gracefully: when no NAV exists on or after the due date (a debit due today before
+      the evening upload, or a weekend that has not reached Monday) the plan is left alone and
+      retried, never priced off a stale NAV. A gap longer than 10 days is refused outright, since
+      that is a dead scheme or a wrong code, not a holiday.
+- [x] Only `MONTHLY` plans auto-apply. `WEEKLY`/`QUARTERLY` store no anchor date, so generating
+      monthly dates for a quarterly plan would buy three times the units. Left for Phase 2.
+- [x] Surfaced on `/holdings` and `/funds`: "Applied 1 Jul at NAV ₹9.89 · 303.1987 units ·
+      ₹3,000 from HDFC Bank ••4583", showing both dates whenever the allotment shifted, and each
+      SIP row carries "· from HDFC Bank ••4583" so the linked account is visible without opening
+      the dialog.
+- [x] **Backfill decision: start from the reconciliation date, do not invent history.** Past
+      debits are recorded nowhere, so `SipPlan.applyFrom` marks the last date already inside the
+      stored quantity and only debits strictly after it are applied. The four existing plans were
+      set to 2026-07-31, the date holdings were reconciled against the broker. New plans get
+      today. `autoApply` is the per-plan escape hatch for a position kept in step by hand.
+- [x] **The cash side: SIPs debit a linked bank account.** `SipPlan.bankAccountId` points a plan
+      at the account its mandate hits, chosen from a "Debit from" dropdown in the SIP dialog
+      (amount, day, frequency and bank are all editable there). On allotment the balance is
+      decremented **inside the same transaction** as the units, so cash and units can never
+      disagree. A SIP is a transfer, not a loss: the same rupees leave the bank and arrive as
+      units, so net worth is unchanged and only its composition moves.
+      - `SipExecution.bankAccountId` / `bankDebitedInr` record where the cash actually left, per
+        execution, so re-pointing a plan at another bank later cannot rewrite past debits.
+      - The account drops out with `onDelete: SetNull`, so deleting a bank unlinks the plan
+        instead of destroying its history.
+      - `asOf` moves to the debit date only when that is later, so a balance's freshness marker
+        never travels backwards.
+      - The balance is allowed to go **negative** on purpose. It is user-maintained, so a
+        shortfall means it has gone stale, and clamping would hide exactly the kind of silent
+        drift this whole phase exists to remove.
+      - All four plans are linked to HDFC Bank ••4583 (₹7,000/month against ₹36,106.50).
+
+Verified end to end against the live database: two missed debits (1 Jun, 1 Jul) were caught up in
+order at their real published NAVs, quantity and invested matched a hand calculation to the paisa,
+HDFC fell by exactly ₹6,000 while invested rose by exactly ₹6,000, re-running applied nothing and
+did not double-debit the bank, and the test state was then restored. The current live state is the
+day-1 SIP correctly *waiting*, because 1 Aug 2026 was a Saturday and Monday's NAV is not out yet.
+
 ---
 
 ## 🔲 Remaining backlog
@@ -137,27 +227,6 @@ Ordered. Each phase leaves the app deployable.
       - Must render fully assembled and static under `prefers-reduced-motion`.
 - [ ] **Loading and empty states**: skeletons for the Overview tiles, tables and charts. Refresh
       the remaining empty states to the new system.
-
-### Phase 1.5: SIP auto-apply to holdings
-**No, SIP debits do not update holdings today.** A `SipPlan` only stores the schedule. Nothing
-ever adds the purchased units to the `Holding`, so after every debit the app understates units
-and invested until the position is edited by hand. That is why the numbers had drifted about
-₹7,000 below reality by 31 Jul 2026.
-
-Now that mutual funds hold real units and real NAVs, this becomes tractable:
-- [ ] Add a `SipExecution` model (`sipPlanId`, `dueDate`, `amountInr`, `navUsed`, `unitsAdded`,
-      `appliedAt`) with a unique key on `(sipPlanId, dueDate)`. That key is what makes applying
-      idempotent, so a cron that runs twice cannot buy the same units twice.
-- [ ] In the daily cron, for every active plan whose due date has passed and has no execution
-      row: look up the fund's NAV on that date, compute `units = amount / nav`, then
-      `quantity += units` and `avgBuyPrice = (oldInvested + amount) / newQuantity`. Write the
-      execution row in the same transaction.
-- [ ] Degrade gracefully: if no NAV exists for that date (holiday, weekend, missing history),
-      leave the plan alone and retry the next day rather than guessing a price.
-- [ ] Surface it: a small "applied on 5 Aug at NAV 10.12, 494.07 units" line under each SIP, so
-      an automatic change to a money figure is always explained.
-- [ ] Backfill decision: past debits since the plan was created are not recorded anywhere. Either
-      start applying from today only (simple, honest) or let the user enter historical debits.
 
 ### Phase 2: XIRR (needs a schema change first)
 **Blocker found 2026-07-07:** nothing in the database stores *when* an investment was made.
@@ -223,4 +292,9 @@ Then:
 - **Prisma schema changes need a dev-server restart** (the client singleton caches in memory).
 - **Groww is unofficial and scraped**, so it can break if their page changes. The graceful refresh
   keeps the last good holdings when a fetch fails.
+- **A published NAV series doubles as a business-day calendar.** AMFI publishes only on settlement
+  days, so a missing date means a weekend or a holiday. Any "what price applied on date X" question
+  should walk that series rather than reach for a hardcoded holiday list.
+- **Outbound fetches in the daily cron need retries.** A single cold DNS/TLS handshake failed about
+  one run in three from the Next server while succeeding instantly from curl.
 - **No em dashes**, anywhere, in copy or comments.

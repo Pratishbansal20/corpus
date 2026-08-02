@@ -15,6 +15,7 @@ import { AllocationDonut } from "@/components/charts/allocation-donut";
 import { RefreshFundsButton } from "@/components/funds/refresh-funds-button";
 import { FundHoldingsList } from "@/components/funds/fund-holdings-list";
 import { OverlapMatrix } from "@/components/funds/overlap-matrix";
+import { SipAppliedNote } from "@/components/sips/sip-applied-note";
 
 const dateFmt = new Intl.DateTimeFormat("en-IN", {
   day: "numeric",
@@ -123,19 +124,24 @@ export default async function FundsPage() {
               <CalendarClock className="text-muted-foreground size-5 shrink-0" />
             </div>
           </CardHeader>
-          <CardContent className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
+          <CardContent className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
             {activeSips.map((s) => (
-              <div
-                key={s.id}
-                className="flex items-center justify-between gap-3 text-sm"
-              >
-                <span className="min-w-0 flex-1 truncate">{s.fundName}</span>
-                <span className="text-muted-foreground shrink-0 text-xs">
-                  {dateFmt.format(s.nextDate)}
-                </span>
-                <span className="num shrink-0 text-sm">
-                  {formatInr(s.amountInr)}
-                </span>
+              <div key={s.id}>
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <span className="min-w-0 flex-1 truncate">{s.fundName}</span>
+                  <span className="text-muted-foreground shrink-0 text-xs">
+                    {dateFmt.format(s.nextDate)}
+                  </span>
+                  <span className="num shrink-0 text-sm">
+                    {formatInr(s.amountInr)}
+                  </span>
+                </div>
+                {s.bankLabel && (
+                  <p className="text-muted-foreground text-xs">
+                    from {s.bankLabel}
+                  </p>
+                )}
+                {s.lastApplied && <SipAppliedNote applied={s.lastApplied} />}
               </div>
             ))}
           </CardContent>
@@ -218,13 +224,6 @@ export default async function FundsPage() {
 
       {withData.length > 1 && (
         <Card>
-          <CardHeader>
-            <CardTitle>Fund overlap</CardTitle>
-            <CardDescription>
-              Shared holdings between funds. Higher means more duplication
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
             <OverlapMatrix
               funds={withData.map((f) => ({
                 id: f.instrumentId,
@@ -233,7 +232,6 @@ export default async function FundsPage() {
               }))}
               overlaps={analysis.overlaps}
             />
-          </CardContent>
         </Card>
       )}
 

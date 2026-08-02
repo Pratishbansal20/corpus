@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/card";
 import { requireUser } from "@/lib/auth/require-user";
 import { getUserPortfolio } from "@/lib/holdings/queries";
-import { getSipPlans } from "@/lib/sips/queries";
+import { getSipPlans, getSipBankOptions } from "@/lib/sips/queries";
 import { consolidateBySource } from "@/lib/holdings/consolidation";
 import { formatInr, formatPct } from "@/lib/money";
 import { HoldingFormDialog } from "@/components/holdings/holding-form-dialog";
@@ -23,9 +23,10 @@ function pnlClass(value: number): string {
 
 export default async function HoldingsPage() {
   const user = await requireUser();
-  const [{ holdings, summary }, sips] = await Promise.all([
+  const [{ holdings, summary }, sips, banks] = await Promise.all([
     getUserPortfolio(user.id),
     getSipPlans(user.id),
+    getSipBankOptions(user.id),
   ]);
 
   const hasUsHolding = holdings.some((h) => h.country === "US");
@@ -93,7 +94,7 @@ export default async function HoldingsPage() {
         </>
       )}
 
-      <SipSection sips={sips} />
+      <SipSection sips={sips} banks={banks} />
     </div>
   );
 }
