@@ -4,7 +4,11 @@ import { Input } from "@/components/ui/input";
 import { Field, selectClass } from "@/components/forms/fields";
 import { FormDialog } from "@/components/forms/form-dialog";
 import { saveSip } from "@/lib/sips/actions";
-import { SIP_FREQUENCY_LABELS, type SipView } from "@/lib/sips/constants";
+import {
+  SIP_FREQUENCY_LABELS,
+  type SipBankView,
+  type SipView,
+} from "@/lib/sips/constants";
 
 const SOURCES = ["MANUAL", "GROWW", "PAYTM_MONEY", "INDMONEY"] as const;
 
@@ -12,10 +16,12 @@ export function SipDialog({
   initial,
   trigger,
   label,
+  banks = [],
 }: {
   initial?: SipView;
   trigger: "primary" | "icon";
   label: string;
+  banks?: SipBankView[];
 }) {
   return (
     <FormDialog
@@ -117,6 +123,31 @@ export function SipDialog({
               />
             </Field>
           </div>
+          <Field
+            label="Debit from"
+            htmlFor="bankAccountId"
+            error={state.fieldErrors?.bankAccountId}
+            hint={
+              banks.length > 0
+                ? "The amount is deducted from this account when the units are allotted."
+                : "Add a bank account to track the cash leaving."
+            }
+          >
+            <select
+              id="bankAccountId"
+              name="bankAccountId"
+              defaultValue={initial?.bankAccountId ?? ""}
+              className={selectClass}
+              disabled={banks.length === 0}
+            >
+              <option value="">Not linked</option>
+              {banks.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.label}
+                </option>
+              ))}
+            </select>
+          </Field>
         </>
       )}
     </FormDialog>

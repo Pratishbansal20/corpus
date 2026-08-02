@@ -18,6 +18,14 @@ export const sipSchema = z.object({
     .min(1, "Day must be 1–31")
     .max(31, "Day must be 1–31"),
   source: z.string().trim().max(40).optional(),
+  // The account the mandate debits. The empty string is what an unselected
+  // <select> posts, so it is normalized to undefined rather than rejected.
+  bankAccountId: z
+    .string()
+    .trim()
+    .max(40)
+    .optional()
+    .transform((v) => (v ? v : undefined)),
 });
 
 export type SipValues = z.infer<typeof sipSchema>;
@@ -59,4 +67,46 @@ export function nextSipDate(dayOfMonth: number, from = new Date()): Date {
   if (thisMonth >= todayUtc) return new Date(thisMonth);
 
   return new Date(Date.UTC(y, m + 1, clampToMonth(y, m + 1)));
+}
+
+/**
+ * Every scheduled debit date in `(after, through]`, oldest first.
+ *
+ * Auto-apply works off this rather than off a single "most recent" date so a
+ * cron that does not run for a fortnight catches up on both missed debits
+ * instead of silently dropping one. Same month-length clamping as
+ * `nextSipDate`, so a plan on the 31st debits on the 30th in April.
+ *
+ * `after` is exclusive: it is the last date already accounted for, so a debit
+ * falling exactly on it is treated as already applied.
+ */
+export function dueDatesBetween(
+  dayOfMonth: number,
+  after: Date,
+  through: Date,
+): Date[] {
+  if (after.getTime() >= through.getTime()) return [];
+
+  const dates: Date[] = [];
+  // Walk months from the one containing `after` to the one containing
+  // `through`, so a long gap yields every debit in between.
+  let y = after.getUTCFullYear();
+  let m = after.getUTCMonth();
+  const endY = through.getUTCFullYear();
+  const endM = through.getUTCMonth();
+
+  while (y < endY || (y === endY && m <= endM)) {
+    const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+    const due = Date.UTC(y, m, Math.min(dayOfMonth, lastDay));
+    if (due > after.getTime() && due <= through.getTime()) {
+      dates.push(new Date(due));
+    }
+    m += 1;
+    if (m > 11) {
+      m = 0;
+      y += 1;
+    }
+  }
+
+  return dates;
 }

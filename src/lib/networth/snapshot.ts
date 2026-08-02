@@ -1,5 +1,6 @@
 import { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/db/prisma";
+import { TREND_MAX_DAYS } from "./trend-range";
 import { getUserPortfolio } from "@/lib/holdings/queries";
 import {
   getBankAccounts,
@@ -67,9 +68,14 @@ export type NetWorthPoint = {
   totalAssetsInr: number;
 };
 
+/**
+ * Default window: the widest range the trend chart offers. Loading only 90 days
+ * would have made 1Y and beyond quietly show the same 90 days. One row per day
+ * per user, so even the full span is a few thousand small rows.
+ */
 export async function getNetWorthHistory(
   userId: string,
-  days = 90,
+  days = TREND_MAX_DAYS,
 ): Promise<NetWorthPoint[]> {
   const since = startOfUtcDay();
   since.setUTCDate(since.getUTCDate() - days);

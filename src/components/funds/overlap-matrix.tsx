@@ -1,7 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { cn } from "@/lib/utils";
+import {
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Segmented } from "@/components/ui/segmented";
 
 export type OverlapFund = {
   id: string;
@@ -26,9 +32,13 @@ const shortName = (name: string) =>
   name.replace(/ (Fund|Direct|Growth|Plan|Cap).*$/i, "").slice(0, 14);
 
 /**
- * Overlap between funds, with a tab to narrow the grid to just the funds being
- * bought every month. Duplication inside an active SIP is the case worth acting
- * on, because that is the money still going in.
+ * Overlap between funds, with a scope switch to narrow the grid to just the
+ * funds being bought every month. Duplication inside an active SIP is the case
+ * worth acting on, because that is the money still going in.
+ *
+ * Renders its own card header so the switch can sit top-right on the title row,
+ * where a control that governs the whole card belongs, rather than floating
+ * above the grid.
  */
 export function OverlapMatrix({
   funds,
@@ -50,48 +60,48 @@ export function OverlapMatrix({
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      {canFilter && (
-        <div
-          role="tablist"
-          aria-label="Which funds to compare"
-          className="bg-muted/60 flex w-fit gap-1 rounded-lg p-1"
-        >
-          {(
-            [
-              ["sip", `Active SIPs (${sipFunds.length})`],
-              ["all", `All funds (${funds.length})`],
-            ] as const
-          ).map(([key, label]) => (
-            <button
-              key={key}
-              role="tab"
-              type="button"
-              aria-selected={scope === key}
-              onClick={() => setScope(key)}
-              className={cn(
-                "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                scope === key
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {label}
-            </button>
-          ))}
+    <>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <CardTitle>Fund overlap</CardTitle>
+            <CardDescription>
+              Shared holdings between funds. Higher means more duplication
+            </CardDescription>
+          </div>
+          {canFilter && (
+            <Segmented
+              items={[
+                {
+                  key: "sip",
+                  label: `Active (${sipFunds.length})`,
+                  title: "Only funds with an active SIP",
+                },
+                {
+                  key: "all",
+                  label: `All (${funds.length})`,
+                  title: "Every fund held",
+                },
+              ]}
+              value={scope}
+              onChange={setScope}
+              ariaLabel="Which funds to compare"
+            />
+          )}
         </div>
-      )}
+      </CardHeader>
 
-      {shown.length > 3 && (
-        <p className="text-muted-foreground text-xs sm:hidden">
-          Scroll horizontally to see all funds
-        </p>
-      )}
+      <CardContent className="flex flex-col gap-3">
+        {shown.length > 3 && (
+          <p className="text-muted-foreground text-xs sm:hidden">
+            Scroll horizontally to see all funds
+          </p>
+        )}
 
-      <div className="overflow-x-auto">
-        {/* w-max (not w-full) so the parent's overflow-x-auto actually scrolls
-            on narrow screens instead of squishing every column to fit. */}
-        <table className="w-max border-separate border-spacing-1 text-xs">
+        <div className="overflow-x-auto">
+          {/* w-max (not w-full) so the parent's overflow-x-auto actually scrolls
+              on narrow screens instead of squishing every column to fit. */}
+          <table className="w-max border-separate border-spacing-1 text-xs">
           <thead>
             <tr>
               <th className="text-left font-normal" />
@@ -136,8 +146,9 @@ export function OverlapMatrix({
               </tr>
             ))}
           </tbody>
-        </table>
-      </div>
-    </div>
+          </table>
+        </div>
+      </CardContent>
+    </>
   );
 }

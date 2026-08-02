@@ -12,10 +12,12 @@ import { formatInr } from "@/lib/money";
 import {
   SIP_FREQUENCY_LABELS,
   monthlySipTotal,
+  type SipBankView,
   type SipView,
 } from "@/lib/sips/queries";
 import { sourceLabel } from "@/lib/holdings/consolidation";
 import { SipDialog } from "./sip-dialog";
+import { SipAppliedNote } from "./sip-applied-note";
 
 const dateFmt = new Intl.DateTimeFormat("en-IN", {
   day: "numeric",
@@ -23,7 +25,13 @@ const dateFmt = new Intl.DateTimeFormat("en-IN", {
   timeZone: "UTC",
 });
 
-export function SipSection({ sips }: { sips: SipView[] }) {
+export function SipSection({
+  sips,
+  banks,
+}: {
+  sips: SipView[];
+  banks: SipBankView[];
+}) {
   const monthly = monthlySipTotal(sips);
 
   return (
@@ -38,7 +46,7 @@ export function SipSection({ sips }: { sips: SipView[] }) {
                 : "Track recurring mutual-fund investments."}
             </CardDescription>
           </div>
-          <SipDialog trigger="primary" label="Add SIP" />
+          <SipDialog trigger="primary" label="Add SIP" banks={banks} />
         </div>
       </CardHeader>
       <CardContent>
@@ -63,7 +71,9 @@ export function SipSection({ sips }: { sips: SipView[] }) {
                   <div className="text-muted-foreground text-xs">
                     {SIP_FREQUENCY_LABELS[s.frequency]} · day {s.dayOfMonth} ·{" "}
                     {sourceLabel(s.source)}
+                    {s.bankLabel && <> · from {s.bankLabel}</>}
                   </div>
+                  {s.lastApplied && <SipAppliedNote applied={s.lastApplied} />}
                 </div>
                 <div className="flex items-center gap-1">
                   <div className="text-right">
@@ -74,7 +84,12 @@ export function SipSection({ sips }: { sips: SipView[] }) {
                       next {dateFmt.format(s.nextDate)}
                     </div>
                   </div>
-                  <SipDialog initial={s} trigger="icon" label="Edit SIP" />
+                  <SipDialog
+                    initial={s}
+                    trigger="icon"
+                    label="Edit SIP"
+                    banks={banks}
+                  />
                   <DeleteDialog
                     id={s.id}
                     name={s.fundName}

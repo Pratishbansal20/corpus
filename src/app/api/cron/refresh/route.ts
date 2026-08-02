@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import { refreshPortfolioPrices } from "@/lib/portfolio/refresh";
 import { refreshFundHoldings } from "@/lib/funds/refresh";
 import { rollForwardSipDates } from "@/lib/sips/queries";
+import { applyDueSips } from "@/lib/sips/apply";
 import { writeDailyNetWorthSnapshot } from "@/lib/networth/snapshot";
 
 // Uses the pg adapter (Node): must not run on the edge.
@@ -28,6 +29,10 @@ export async function GET(request: Request) {
   // Refresh mutual-fund constituents (graceful: keeps previous on failure).
   const funds = await refreshFundHoldings();
 
+  // Buy the units for any debit that has come due, before the snapshot below,
+  // so the recorded net worth already includes them.
+  const sipsApplied = await applyDueSips();
+
   // Advance any SIP date that has passed.
   const sipsRolled = await rollForwardSipDates();
 
@@ -43,8 +48,11 @@ export async function GET(request: Request) {
     fundsUpdated: funds.updated,
     fundsFailed: funds.failed,
     sipsRolled,
+    sipsApplied: sipsApplied.applied,
+    sipUnits: sipsApplied.unitsByPlan,
+    sipsSkipped: sipsApplied.skipped,
     snapshots: users.length,
-    errors: result.errors,
+    errors: [...result.errors, ...sipsApplied.errors],
     refreshedAt: result.refreshedAt,
   });
 }

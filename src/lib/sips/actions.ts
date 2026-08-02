@@ -10,6 +10,9 @@ import { sipSchema, nextSipDate } from "./schema";
 function revalidateSips() {
   revalidatePath("/holdings");
   revalidatePath("/dashboard");
+  revalidatePath("/funds");
+  // The linked account is shown on Accounts, and is what a debit draws down.
+  revalidatePath("/accounts");
 }
 
 export async function saveSip(
@@ -25,6 +28,7 @@ export async function saveSip(
     frequency: formData.get("frequency"),
     dayOfMonth: formData.get("dayOfMonth"),
     source: formData.get("source") || undefined,
+    bankAccountId: formData.get("bankAccountId") || undefined,
   });
   if (!parsed.success) {
     return {
@@ -35,6 +39,22 @@ export async function saveSip(
   }
   const d = parsed.data;
   const source = d.source?.trim() || "MANUAL";
+
+  // Never trust an id posted from the browser: a SIP must only ever be able to
+  // debit an account this user owns.
+  if (d.bankAccountId) {
+    const owned = await prisma.bankAccount.findFirst({
+      where: { id: d.bankAccountId, userId: user.id },
+      select: { id: true },
+    });
+    if (!owned) {
+      return {
+        status: "error",
+        message: "That bank account was not found.",
+        fieldErrors: { bankAccountId: ["Pick one of your accounts."] },
+      };
+    }
+  }
 
   // SIPs are always into mutual funds: find/create that instrument.
   const instrument = await prisma.instrument.upsert({
@@ -56,6 +76,7 @@ export async function saveSip(
     dayOfMonth: d.dayOfMonth,
     nextDate: nextSipDate(d.dayOfMonth),
     source,
+    bankAccountId: d.bankAccountId ?? null,
   };
 
   if (id) {
@@ -63,9 +84,20 @@ export async function saveSip(
       where: { id, userId: user.id },
     });
     if (!owned) return { status: "error", message: "SIP not found." };
+    // applyFrom is deliberately not in `data`: editing the amount or the day
+    // must not reset how far back auto-apply reaches.
     await prisma.sipPlan.update({ where: { id }, data });
   } else {
-    await prisma.sipPlan.create({ data: { ...data, userId: user.id } });
+    // Auto-apply starts from today, so a plan added now picks up its next debit
+    // and never back-buys units the entered holding already contains. Past
+    // debits are not recorded anywhere, so inventing them would be a guess.
+    const now = new Date();
+    const applyFrom = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
+    await prisma.sipPlan.create({
+      data: { ...data, userId: user.id, applyFrom },
+    });
   }
 
   revalidateSips();

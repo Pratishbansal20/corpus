@@ -65,6 +65,12 @@
    same values: no flash, no half-styled light mode to maintain. */
 :root,
 .dark {
+  /* Tell the browser this is a dark UI. Without it, chrome-rendered surfaces we
+     cannot style (the <select> option popup, scrollbars, date pickers, autofill)
+     are drawn in the OS light scheme: a white popup with near-white text, which
+     is why every dropdown in the app was unreadable. */
+  color-scheme: dark;
+
   /* Ink: a warm near-black, never a blue-black slab. */
   --background: oklch(0.155 0.008 75);
   --foreground: oklch(0.935 0.008 80);
@@ -148,6 +154,16 @@
   .font-mono,
   [class*="font-mono"] {
     font-variant-numeric: tabular-nums;
+  }
+
+  /* The option list is drawn by the browser, not by us, so it takes almost no
+     styling. color-scheme above does the real work; these two pin the colours
+     on the engines that do honour them (Chromium on Windows and Linux) so the
+     popup matches the app's panels instead of the platform default. */
+  select option,
+  select optgroup {
+    background-color: var(--popover);
+    color: var(--popover-foreground);
   }
 }
 
