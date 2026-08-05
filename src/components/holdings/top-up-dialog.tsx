@@ -57,14 +57,19 @@ export function TopUpDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
+      {/* Labelled, not an icon. Edit and delete can be icons because everyone
+          already knows a pencil and a bin; "add money to this position" has no
+          such glyph, and as a third unlabelled button in a row it was findable
+          only by hovering every icon on the page. */}
       <Button
-        variant="ghost"
-        size="icon"
+        variant="outline"
+        size="sm"
         aria-label={`Top up ${target.name}`}
-        title="Top up"
+        className="h-8 gap-1.5 px-2.5"
         onClick={() => setOpen(true)}
       >
-        <PlusCircle className="size-4" />
+        <PlusCircle className="size-3.5" />
+        Top up
       </Button>
 
       <DialogContent>

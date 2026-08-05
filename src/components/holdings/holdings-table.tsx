@@ -162,18 +162,6 @@ export function HoldingsTable({
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-0.5">
-                  <TopUpDialog
-                    target={{
-                      id: h.id,
-                      name: h.name,
-                      symbol: h.symbol,
-                      isFund: h.type === "MUTUAL_FUND",
-                      currency: h.currency,
-                      quantity: h.quantity,
-                      avgBuyPrice: h.avgBuyPrice,
-                    }}
-                    banks={banks}
-                  />
                   <HoldingFormDialog
                     mode="edit"
                     initial={h}
@@ -209,6 +197,24 @@ export function HoldingsTable({
                   <div>{formatSignedInr(h.pnlInr)}</div>
                   <div className="text-xs">{formatPct(h.pnlPct)}</div>
                 </div>
+              </div>
+
+              {/* Its own row rather than a fourth control in the header: at
+                  phone widths a labelled button up there cut the instrument
+                  name down to about 100px. */}
+              <div className="mt-3 flex justify-end">
+                <TopUpDialog
+                  target={{
+                    id: h.id,
+                    name: h.name,
+                    symbol: h.symbol,
+                    isFund: h.type === "MUTUAL_FUND",
+                    currency: h.currency,
+                    quantity: h.quantity,
+                    avgBuyPrice: h.avgBuyPrice,
+                  }}
+                  banks={banks}
+                />
               </div>
             </div>
           ))}
