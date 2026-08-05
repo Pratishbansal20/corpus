@@ -1,6 +1,6 @@
 # Personal Finance Hub: Plan & Status (v3)
 
-_Last updated 2026-08-02. This file is the source of truth for what's built vs. what's next._
+_Last updated 2026-08-05. This file is the source of truth for what's built vs. what's next._
 _Mirrored from the Claude Code plan; kept in-repo so it's openable on GitHub / the Claude app._
 
 ## Context
@@ -20,13 +20,13 @@ Holds sensitive data, so "nobody but me" security is first-class.
 - Next.js 16 (App Router) + TS monolith · PostgreSQL (Neon) + **Prisma 7** (pg adapter,
   `prisma.config.ts`, client → `src/generated/prisma`, gitignored).
 - Auth.js v5 (Google, **database sessions**) · Tailwind v4 + shadcn (base-nova/Base UI) ·
-  **recharts 3.9** · **vitest** (55 tests) · dark-first · money always `Decimal`.
+  **recharts 3.9** · **vitest** (74 tests) · dark-first · money always `Decimal`.
 - **Env vars**: `DATABASE_URL`, `AUTH_SECRET`, `AUTH_GOOGLE_ID/SECRET`, `OWNER_EMAIL`,
   `ENCRYPTION_KEY` (32-byte b64), `PRICE_STALE_HOURS`, `CRON_SECRET`.
 
 ---
 
-## ✅ Delivered (all verified: `tsc` clean, `next build` green, 55 tests pass)
+## ✅ Delivered (all verified: `tsc` clean, `next build` green, 74 tests pass)
 
 - [x] **M1 Setup**: scaffold, shadcn, dark theme, Prisma+Neon, app shell (sidebar/topbar/mobile nav).
 - [x] **M2 Auth**: Google OAuth, DB sessions, `/login`, protected `(dashboard)`, user menu + sign-out.
@@ -96,6 +96,46 @@ Holds sensitive data, so "nobody but me" security is first-class.
       control governing the whole card belongs, instead of floating above the grid on the left.
       Both it and the range picker are now the same `Segmented` component rather than two
       lookalikes that would drift apart.
+
+### Getting money in (2026-08-05): search and top-up
+Entering a lump-sum purchase was the worst job in the app. Adding a holding meant knowing the
+exact ticker, the exact name and, for a fund, the AMFI scheme code looked up by hand, and getting
+any of them wrong produced a position that silently never priced. Adding to a position you already
+held meant doing the weighted-average blend yourself, which is invisible to get slightly wrong and
+permanent once saved.
+
+- [x] **Search by name** (`lib/instruments/search.ts`). mfapi.in for every AMFI scheme, which
+      returns the scheme code, so the `externalId` that makes NAV pricing exact is filled in
+      rather than looked up. Yahoo for equities. Picking a result fills type, symbol, name and
+      scheme code, leaving only what was actually bought. "Enter it manually" is still there, so a
+      brand new listing is never a dead end.
+- [x] **Only offer what the app can actually price.** Indian stocks are quoted by appending `.NS`,
+      so only NSE listings are offered and the bare ticker is stored. A Sao Paulo DRN, a Buenos
+      Aires CEDEAR or a BSE-only line would be added and then never valued, so they are dropped.
+- [x] **Funds are matched on scheme code, not symbol.** The seeded funds carry hand-made symbols
+      like `JIOBR_FLEXI` while search offers `MF153859` for the same scheme. `resolveInstrumentId`
+      now looks up the scheme code first, so picking a fund from search tops up the position
+      already held instead of quietly opening a second one beside it.
+- [x] **Top up** on every holding, separate from Edit on purpose: Edit *sets* quantity and average
+      (for corrections), Top up *adds* (for purchases) and blends the average for you. Funds take
+      a rupee amount priced at the NAV for the purchase date, using the same published-series
+      lookup as the SIP path, so a date on a weekend or holiday resolves to the next NAV actually
+      published. Stocks take a share count and price. Optionally debits a bank account, in the same
+      transaction, exactly as a SIP does.
+- [x] When no NAV exists yet for the chosen date (the common case: buying today, before that
+      evening's upload) the error names the latest date that does exist, so it is one click to fix.
+- [x] Search fetches retry once on a 12s budget. The first outbound request from a cold server
+      process was measured at 8 to 9 seconds here while later ones take under one, so a single 8s
+      attempt returned "nothing found" for the first search of every session.
+
+Verified end to end against the live app on a throwaway holding, then removed: searched a fund,
+confirmed all four plan variants were distinguishable, added it at 100 units and ₹50, topped it up
+by ₹25,000 dated 4 Aug, and every figure matched a hand calculation exactly (267.787805 units at
+NAV 93.3575, 367.787805 units, ₹81.568773 average, ₹30,000 invested, HDFC down exactly ₹25,000).
+Real positions were never touched.
+
+Note: top-ups still only mutate the holding. They record no date, so they remain invisible to
+XIRR. They are the obvious first writer to the `Transaction` model in Phase 2.
 
 ### Bug fix (2026-07-31): SIP dates never refreshed
 Two bugs, both fixed:

@@ -78,7 +78,7 @@ export default async function HoldingsPage() {
             </Card>
           )}
 
-          <HoldingsTable holdings={holdings} />
+          <HoldingsTable holdings={holdings} banks={banks} />
           {hasUsHolding && !summary.fxIsLive && (
             <p className="text-muted-foreground text-xs">
               US holdings use a fallback USD/INR rate until FX is refreshed.
