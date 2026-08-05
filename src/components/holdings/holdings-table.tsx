@@ -21,6 +21,8 @@ import {
 import type { HoldingView } from "@/lib/portfolio/valuation";
 import type { InstrumentType } from "@/generated/prisma";
 import { HoldingFormDialog } from "./holding-form-dialog";
+import { TopUpDialog } from "./top-up-dialog";
+import type { SipBankView } from "@/lib/sips/constants";
 import { DeleteHoldingDialog } from "./delete-holding-dialog";
 import { ArrowUpDown } from "lucide-react";
 
@@ -39,7 +41,13 @@ function pnlClass(value: number): string {
 type SortField = "name" | "source" | "quantity" | "invested" | "value" | "pnl" | "weight";
 type SortOrder = "asc" | "desc";
 
-export function HoldingsTable({ holdings: initialHoldings }: { holdings: HoldingView[] }) {
+export function HoldingsTable({
+  holdings: initialHoldings,
+  banks = [],
+}: {
+  holdings: HoldingView[];
+  banks?: SipBankView[];
+}) {
   const [sortField, setSortField] = React.useState<SortField>("weight");
   const [sortOrder, setSortOrder] = React.useState<SortOrder>("desc");
 
@@ -154,6 +162,18 @@ export function HoldingsTable({ holdings: initialHoldings }: { holdings: Holding
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-0.5">
+                  <TopUpDialog
+                    target={{
+                      id: h.id,
+                      name: h.name,
+                      symbol: h.symbol,
+                      isFund: h.type === "MUTUAL_FUND",
+                      currency: h.currency,
+                      quantity: h.quantity,
+                      avgBuyPrice: h.avgBuyPrice,
+                    }}
+                    banks={banks}
+                  />
                   <HoldingFormDialog
                     mode="edit"
                     initial={h}
@@ -270,6 +290,18 @@ export function HoldingsTable({ holdings: initialHoldings }: { holdings: Holding
               </TableCell>
               <TableCell>
                 <div className="flex items-center justify-end gap-1">
+                  <TopUpDialog
+                    target={{
+                      id: h.id,
+                      name: h.name,
+                      symbol: h.symbol,
+                      isFund: h.type === "MUTUAL_FUND",
+                      currency: h.currency,
+                      quantity: h.quantity,
+                      avgBuyPrice: h.avgBuyPrice,
+                    }}
+                    banks={banks}
+                  />
                   <HoldingFormDialog
                     mode="edit"
                     initial={h}
