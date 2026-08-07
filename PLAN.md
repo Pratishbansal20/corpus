@@ -1,6 +1,6 @@
 # Personal Finance Hub: Plan & Status (v3)
 
-_Last updated 2026-08-05. This file is the source of truth for what's built vs. what's next._
+_Last updated 2026-08-07. This file is the source of truth for what's built vs. what's next._
 _Mirrored from the Claude Code plan; kept in-repo so it's openable on GitHub / the Claude app._
 
 ## Context
@@ -20,13 +20,13 @@ Holds sensitive data, so "nobody but me" security is first-class.
 - Next.js 16 (App Router) + TS monolith · PostgreSQL (Neon) + **Prisma 7** (pg adapter,
   `prisma.config.ts`, client → `src/generated/prisma`, gitignored).
 - Auth.js v5 (Google, **database sessions**) · Tailwind v4 + shadcn (base-nova/Base UI) ·
-  **recharts 3.9** · **vitest** (74 tests) · dark-first · money always `Decimal`.
+  **recharts 3.9** · **vitest** (91 tests) · dark-first · money always `Decimal`.
 - **Env vars**: `DATABASE_URL`, `AUTH_SECRET`, `AUTH_GOOGLE_ID/SECRET`, `OWNER_EMAIL`,
   `ENCRYPTION_KEY` (32-byte b64), `PRICE_STALE_HOURS`, `CRON_SECRET`.
 
 ---
 
-## ✅ Delivered (all verified: `tsc` clean, `next build` green, 74 tests pass)
+## ✅ Delivered (all verified: `tsc` clean, `next build` green, 91 tests pass)
 
 - [x] **M1 Setup**: scaffold, shadcn, dark theme, Prisma+Neon, app shell (sidebar/topbar/mobile nav).
 - [x] **M2 Auth**: Google OAuth, DB sessions, `/login`, protected `(dashboard)`, user menu + sign-out.
@@ -136,6 +136,54 @@ Real positions were never touched.
 
 Note: top-ups still only mutate the holding. They record no date, so they remain invisible to
 XIRR. They are the obvious first writer to the `Transaction` model in Phase 2.
+
+### Bug fix (2026-08-07): five holdings had never been priced
+An audit of every held symbol found five instruments still sitting on their
+2026-06-29 seed price, with exactly one row in `Price`. They had never once received
+a live quote, so for six weeks they showed cost basis dressed up as current value.
+All five returned HTTP 404. The other 29 were pricing daily and were fine.
+
+- `NVDA` was typed `IN_STOCK`, so the provider appended `.NS` and asked for `NVDA.NS`.
+  Retyped `US_STOCK`.
+- `VIKRAMSOLAR` is not the ticker; NSE lists it as `VIKRAMSOLR`. Renamed.
+- `TATAMTRDVR` and `TATAMOTORS` are pre-demerger tickers. The correct instruments
+  (`TMPV`, `TMCV`) already existed, so the Paytm holdings were moved onto them and the
+  dead instruments deleted.
+- `VENTURA` (Ventura Textiles) is **BSE-only**: it has no NSE listing at all, so no
+  symbol change could have saved it. `fetchYahooPrice` now tries `.NS` then falls back
+  to `.BO`, and search offers BSE listings too, ranked below NSE since both collapse to
+  the same stored symbol.
+
+After the fix: 34 instruments priced, 0 stale. The corrections moved real money, most
+of it hidden in one position: `TMCV` on Paytm was up ₹2,102 that had never shown.
+Note its cost basis is pre-demerger and probably wants apportioning across TMCV/TMPV.
+
+### Stale-price guard (2026-08-07)
+The five above went unnoticed for six weeks because a wrong symbol fails **silently**:
+Yahoo answers 404, the provider returns null, the refresh counts a skip, and the
+holding keeps rendering its cost basis. The same silence hid the dead AMFI URL.
+
+`findStalePrices()` now catches both shapes. The naive test, "no price in N days", is
+the wrong shape: markets close for weekends and holidays, so it would cry wolf every
+long weekend, and N would have to be so large that a dead symbol takes a fortnight to
+surface. Instead each instrument is judged **against its own peers**, grouped by
+instrument type, which self-adjusts to whatever the calendar is doing.
+
+- `LAGGING`: one instrument far behind others of its type. Its peers priced today and
+  it did not, so the calendar is not the explanation. This is the five-symbol bug.
+- `SOURCE_DOWN`: a whole type far behind *today*. Peer comparison is blind to this
+  because everything is equally stale, so the group's freshest price is also checked
+  against the clock. This is the dead AMFI URL.
+- `NEVER_PRICED`: no price row at all.
+
+**N = 5 days.** The longest realistic run of non-trading days is a weekend wrapped
+around consecutive public holidays, which reaches four. Five clears that, tolerates one
+failed cron run, and still surfaces a broken symbol inside a week. For the peer check
+it is pure slack: a healthy instrument is normally within a day of its group.
+
+Surfaced as the first dashboard nudge, naming the symbols. Verified both ways against
+live data: silent on the healthy portfolio, and on rolling `VENTURA` back to its old
+prices it reported "1 holding is not pricing (VENTURA). The symbol is probably wrong."
 
 ### Bug fix (2026-07-31): SIP dates never refreshed
 Two bugs, both fixed:

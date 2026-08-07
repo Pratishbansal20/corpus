@@ -71,14 +71,37 @@ describe("parseYahooSearch", () => {
     expect(hit).toMatchObject({ symbol: "INFY", hint: "NYSE" });
   });
 
-  it("drops listings the pricing pipeline could never quote", () => {
-    // Sao Paulo, Buenos Aires, Hamburg and BSE-only all resolve to nothing the
-    // app can price, so offering them would be a trap.
+  it("accepts a BSE listing, since pricing falls back to .BO", () => {
+    // Ventura Textiles is BSE-only and went unpriced for months because the
+    // provider only ever tried NSE. Both suffixes strip to the same stored
+    // symbol, and pricing tries .NS then .BO.
+    const hit = parseYahooSearch(sample).find((h) => h.hint === "BSE");
+    expect(hit).toMatchObject({ type: "IN_STOCK", symbol: "HCL-INSYS" });
+  });
+
+  it("ranks NSE above BSE when a stock is on both", () => {
+    // Yahoo often lists BSE first. Both collapse to one stored symbol, so the
+    // row that survives dedupe must be labelled with the exchange the price
+    // will actually come from.
+    const both = parseYahooSearch({
+      quotes: [
+        { symbol: "VIKRAMSOLR.BO", exchange: "BSE", quoteType: "EQUITY", shortname: "Vikram Solar Limited" },
+        { symbol: "VIKRAMSOLR.NS", exchange: "NSI", quoteType: "EQUITY", shortname: "VIKRAM SOLAR LIMITED" },
+      ],
+    });
+    expect(both[0].hint).toBe("NSE");
+    expect(dedupe(both)).toHaveLength(1);
+    expect(dedupe(both)[0]).toMatchObject({ symbol: "VIKRAMSOLR", hint: "NSE" });
+  });
+
+  it("still drops listings the pricing pipeline could never quote", () => {
+    // Sao Paulo, Buenos Aires and Hamburg resolve to nothing the app can
+    // price, so offering them would be a trap.
     const symbols = parseYahooSearch(sample).map((h) => h.symbol);
     expect(symbols).not.toContain("I1FO34.SA");
     expect(symbols).not.toContain("INFY.BA");
-    expect(symbols).not.toContain("HCL-INSYS.BO");
     expect(symbols).not.toContain("IOY.HM");
+    expect(symbols.some((s) => s.includes("."))).toBe(false);
   });
 
   it("softens shouted names but leaves normal ones alone", () => {

@@ -9,7 +9,12 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { requireUser } from "@/lib/auth/require-user";
-import { getUserPortfolio, countStaleMutualFunds } from "@/lib/holdings/queries";
+import {
+  getUserPortfolio,
+  countStaleMutualFunds,
+  getStalePricedHoldings,
+} from "@/lib/holdings/queries";
+import { stalePriceMessage } from "@/lib/holdings/stale-prices";
 import {
   getBankAccounts,
   getManualAssets,
@@ -55,7 +60,17 @@ function pnlClass(value: number): string {
 
 export default async function DashboardPage() {
   const user = await requireUser();
-  const [portfolio, banks, assets, cards, creditScore, sips, history, staleMfs] =
+  const [
+    portfolio,
+    banks,
+    assets,
+    cards,
+    creditScore,
+    sips,
+    history,
+    staleMfs,
+    stalePrices,
+  ] =
     await Promise.all([
       getUserPortfolio(user.id),
       getBankAccounts(user.id),
@@ -65,6 +80,7 @@ export default async function DashboardPage() {
       getSipPlans(user.id),
       getNetWorthHistory(user.id),
       countStaleMutualFunds(user.id, 15),
+      getStalePricedHoldings(user.id),
     ]);
 
   const bankInr = sumBalances(banks);
@@ -142,6 +158,17 @@ export default async function DashboardPage() {
       id: "credit",
       message: `Your credit score is more than ${STALE_DAYS} days old.`,
       href: "/settings",
+    });
+  }
+  // A holding that has stopped pricing shows its cost basis as though that were
+  // its value, which is invisible without being told. Listed first because a
+  // wrong figure is worse than a merely old one.
+  const stalePriceNudge = stalePriceMessage(stalePrices);
+  if (stalePriceNudge) {
+    reminders.unshift({
+      id: "stale-prices",
+      message: stalePriceNudge,
+      href: "/holdings",
     });
   }
   // NAVs update themselves; units do not. Any purchase made outside a SIP has

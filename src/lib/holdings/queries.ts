@@ -1,6 +1,53 @@
 import { prisma } from "@/lib/db/prisma";
 import { getUsdInrRate } from "@/lib/portfolio/fx";
 import { buildPortfolio, type Portfolio } from "@/lib/portfolio/valuation";
+import {
+  findStalePrices,
+  type PricedInstrument,
+  type StaleInstrument,
+} from "./stale-prices";
+
+/**
+ * Held instruments that appear to have stopped pricing.
+ *
+ * A wrong symbol fails silently: the provider returns null, the refresh counts
+ * a skip, and the position quietly keeps showing cost basis as value. Five
+ * holdings did exactly that for six weeks. See `stale-prices.ts` for how the
+ * judgement is made.
+ */
+export async function getStalePricedHoldings(
+  userId: string,
+): Promise<StaleInstrument[]> {
+  const holdings = await prisma.holding.findMany({
+    where: { userId },
+    include: { instrument: true },
+  });
+  if (holdings.length === 0) return [];
+
+  const instrumentIds = [...new Set(holdings.map((h) => h.instrumentId))];
+  const latest = await prisma.price.groupBy({
+    by: ["instrumentId"],
+    where: { instrumentId: { in: instrumentIds } },
+    _max: { asOf: true },
+  });
+  const lastPriced = new Map(latest.map((r) => [r.instrumentId, r._max.asOf]));
+
+  const seen = new Set<string>();
+  const instruments: PricedInstrument[] = [];
+  for (const h of holdings) {
+    if (seen.has(h.instrumentId)) continue;
+    seen.add(h.instrumentId);
+    instruments.push({
+      instrumentId: h.instrumentId,
+      symbol: h.instrument.symbol,
+      name: h.instrument.name,
+      type: h.instrument.type,
+      lastPricedAt: lastPriced.get(h.instrumentId) ?? null,
+    });
+  }
+
+  return findStalePrices(instruments);
+}
 
 // Loads a user's holdings, attaches each instrument's latest price (none yet
 // until Milestone 4), and returns the fully-valued portfolio (per-holding views
