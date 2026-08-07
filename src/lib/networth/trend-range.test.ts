@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   sliceToRange,
+  niceDomain,
   rangeDays,
   TREND_RANGES,
   TREND_MAX_DAYS,
@@ -75,6 +76,58 @@ describe("sliceToRange", () => {
     ]);
     // The server must load at least as far back as the widest range.
     expect(TREND_MAX_DAYS).toBe(1826);
+  });
+
+  it("scales the axis to the window, not to zero", () => {
+    // The bug: recharts defaults to [0, 'auto'], so a net worth around 3.4L
+    // sat in the top fifth of the plot and a 20k move looked like nothing.
+    const [lo, hi] = niceDomain([340000, 352000, 348000]);
+    expect(lo).toBeGreaterThan(300000);
+    expect(hi).toBeLessThan(400000);
+    expect(lo).toBeLessThanOrEqual(340000);
+    expect(hi).toBeGreaterThanOrEqual(352000);
+  });
+
+  it("gives different windows different scales", () => {
+    // The visible symptom: switching range barely changed the picture, because
+    // the top of the scale was the maximum and the maximum was always similar.
+    const week = niceDomain([348000, 350000, 352000]);
+    const year = niceDomain([280000, 310000, 352000]);
+    expect(week).not.toEqual(year);
+    expect(week[0]).toBeGreaterThan(year[0]);
+  });
+
+  it("keeps every point inside the axis", () => {
+    const values = [280473, 362671, 301000, 344000];
+    const [lo, hi] = niceDomain(values);
+    for (const v of values) {
+      expect(v).toBeGreaterThanOrEqual(lo);
+      expect(v).toBeLessThanOrEqual(hi);
+    }
+  });
+
+  it("lands on round numbers so the ticks read cleanly", () => {
+    const [lo, hi] = niceDomain([340000, 352000]);
+    expect(lo % 1000).toBe(0);
+    expect(hi % 1000).toBe(0);
+  });
+
+  it("does not show a negative axis for an all-positive series", () => {
+    // Padding below a small value must not invent space the data never uses.
+    expect(niceDomain([10, 20, 30])[0]).toBeGreaterThanOrEqual(0);
+  });
+
+  it("gives a flat series a band instead of collapsing the axis", () => {
+    const [lo, hi] = niceDomain([350000, 350000, 350000]);
+    expect(hi).toBeGreaterThan(lo);
+    expect(lo).toBeLessThanOrEqual(350000);
+    expect(hi).toBeGreaterThanOrEqual(350000);
+  });
+
+  it("survives a single point and an empty window", () => {
+    const [lo, hi] = niceDomain([350000]);
+    expect(hi).toBeGreaterThan(lo);
+    expect(niceDomain([])).toEqual([0, 1]);
   });
 
   it("narrows to a week", () => {

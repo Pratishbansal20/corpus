@@ -13,6 +13,7 @@ import { formatInr, formatInrCompact } from "@/lib/money";
 import { Segmented } from "@/components/ui/segmented";
 import {
   TREND_RANGES,
+  niceDomain,
   rangeDays,
   sliceToRange,
   type TrendRangeKey,
@@ -53,7 +54,7 @@ const monthFmt = new Intl.DateTimeFormat("en-IN", {
 export function NetWorthTrend({ data }: { data: Point[] }) {
   const [range, setRange] = useState<TrendRangeKey>("1M");
 
-  const { points, recordedDays, shortOnHistory } = useMemo(() => {
+  const { points, recordedDays, shortOnHistory, domain } = useMemo(() => {
     const days = rangeDays(range);
     // Past about six months a day-and-month tick is noise, so widen the label.
     const fmt = days > 182 ? monthFmt : labelFmt;
@@ -61,6 +62,8 @@ export function NetWorthTrend({ data }: { data: Point[] }) {
 
     return {
       ...slice,
+      // Scaled to this window's own values, so each range actually rescales.
+      domain: niceDomain(slice.points.map((d) => d.netWorthInr)),
       points: slice.points.map((d) => ({
         ...d,
         label: fmt.format(new Date(d.date)),
@@ -116,6 +119,7 @@ export function NetWorthTrend({ data }: { data: Point[] }) {
               />
               <YAxis
                 width={52}
+                domain={domain}
                 tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
                 tickLine={false}
                 axisLine={false}
