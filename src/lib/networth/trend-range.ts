@@ -2,6 +2,7 @@
 // so the date arithmetic can be tested without mounting recharts.
 
 export const TREND_RANGES = [
+  { key: "1W", label: "1W", days: 7 },
   { key: "1M", label: "1M", days: 30 },
   { key: "3M", label: "3M", days: 91 },
   { key: "6M", label: "6M", days: 182 },

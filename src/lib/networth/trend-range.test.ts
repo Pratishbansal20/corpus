@@ -63,8 +63,9 @@ describe("sliceToRange", () => {
     });
   });
 
-  it("offers exactly the six ranges the chart advertises", () => {
+  it("offers exactly the ranges the chart advertises, shortest first", () => {
     expect(TREND_RANGES.map((r) => r.key)).toEqual([
+      "1W",
       "1M",
       "3M",
       "6M",
@@ -74,5 +75,13 @@ describe("sliceToRange", () => {
     ]);
     // The server must load at least as far back as the widest range.
     expect(TREND_MAX_DAYS).toBe(1826);
+  });
+
+  it("narrows to a week", () => {
+    const { points, shortOnHistory } = sliceToRange(series(400), rangeDays("1W"));
+    expect(points).toHaveLength(8); // 7 days back, inclusive of both ends
+    expect(points[0].date.slice(0, 10)).toBe("2026-07-26");
+    expect(points.at(-1)!.date.slice(0, 10)).toBe("2026-08-02");
+    expect(shortOnHistory).toBe(false);
   });
 });
