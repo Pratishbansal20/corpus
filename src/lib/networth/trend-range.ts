@@ -39,6 +39,61 @@ export type TrendSlice<T> = {
  * "1M" should still show the last month of data that exists rather than an
  * empty chart.
  */
+/**
+ * A y-axis window that fits the values actually on screen.
+ *
+ * recharts defaults a numeric y-axis to `[0, 'auto']`, which anchors the scale
+ * at zero. For a net worth hovering around 3.4 lakh that puts every point in
+ * the top fifth of the plot, fills the area solid beneath them, and flattens
+ * the line into a block: a 20k move looks like nothing. Worse, since the top
+ * of the scale is the maximum and the maximum is similar in every window,
+ * switching range barely changed the picture, so the ranges looked broken.
+ *
+ * Fitting the window to its own data is what makes the ranges mean something.
+ * The tradeoff is the usual one: a scale that does not start at zero
+ * exaggerates small moves, which is the right call for a trend line whose
+ * whole job is showing change, and the axis labels state the real figures.
+ */
+export function niceDomain(
+  values: readonly number[],
+  padRatio = 0.08,
+): [number, number] {
+  if (values.length === 0) return [0, 1];
+
+  let min = Math.min(...values);
+  let max = Math.max(...values);
+
+  if (min === max) {
+    // One point, or a genuinely flat stretch. Without a band the axis
+    // collapses and the line is drawn on the edge of the plot.
+    const band = Math.max(Math.abs(min) * 0.01, 1);
+    min -= band;
+    max += band;
+  }
+
+  const pad = (max - min) * padRatio;
+  const step = niceStep(max + pad - (min - pad));
+
+  let lo = Math.floor((min - pad) / step) * step;
+  const hi = Math.ceil((max + pad) / step) * step;
+
+  // Never show a negative axis for a series that never goes negative: the
+  // empty space below zero says nothing and costs resolution.
+  if (min >= 0 && lo < 0) lo = 0;
+
+  return [lo, hi];
+}
+
+/** A round step (1, 2 or 5 times a power of ten) giving roughly four ticks. */
+function niceStep(spread: number): number {
+  if (!Number.isFinite(spread) || spread <= 0) return 1;
+  const rough = spread / 4;
+  const magnitude = 10 ** Math.floor(Math.log10(rough));
+  const normalized = rough / magnitude;
+  const factor = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+  return factor * magnitude;
+}
+
 export function sliceToRange<T extends { date: string }>(
   data: readonly T[],
   days: number,
