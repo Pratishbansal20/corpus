@@ -31,10 +31,10 @@ const YAHOO_SEARCH = "https://query1.finance.yahoo.com/v1/finance/search";
 /**
  * Exchanges whose symbols the price pipeline can actually quote.
  *
- * Indian stocks are priced by appending `.NS`, so only NSE listings can be
- * priced and a BSE-only result would be added and then never valued. US
- * symbols are queried bare. Anything else (a London or Frankfurt cross
- * listing, a Brazilian DRN) is dropped rather than offered as a trap.
+ * Indian stocks are priced by trying `.NS` then `.BO`, so both NSE and BSE
+ * listings are offered. US symbols are queried bare. Anything else (a London
+ * or Frankfurt cross listing, a Brazilian DRN) is dropped rather than offered
+ * as a trap, because nothing would ever price it.
  */
 const US_EXCHANGES = new Set(["NMS", "NYQ", "NGM", "NCM", "PCX", "ASE", "BTS"]);
 
@@ -107,12 +107,15 @@ export function parseYahooSearch(payload: unknown, limit = 8): InstrumentHit[] {
       symbol;
     if (!symbol || (quoteType !== "EQUITY" && quoteType !== "ETF")) continue;
 
-    if (symbol.endsWith(".NS")) {
+    if (symbol.endsWith(".NS") || symbol.endsWith(".BO")) {
+      // Both map to the same stored symbol, because pricing tries NSE then BSE
+      // off the bare ticker. dedupe() below keeps whichever came first, and
+      // NSE is ranked ahead so a dual-listed stock reads as the NSE quote.
       hits.push({
         type: "IN_STOCK",
         symbol: symbol.slice(0, -3),
         name: titleish(name),
-        hint: "NSE",
+        hint: symbol.endsWith(".NS") ? "NSE" : "BSE",
       });
     } else if (!symbol.includes(".") && US_EXCHANGES.has(exchange)) {
       hits.push({
@@ -124,7 +127,17 @@ export function parseYahooSearch(payload: unknown, limit = 8): InstrumentHit[] {
     }
     if (hits.length >= limit) break;
   }
-  return hits;
+  // Stable sort putting NSE ahead of BSE. Yahoo often lists the BSE line first,
+  // and since both collapse to one stored symbol, the row that survives dedupe
+  // should be labelled with the exchange the price will actually come from.
+  return hits
+    .map((hit, i) => ({ hit, i }))
+    .sort((a, b) => rankHint(a.hit.hint) - rankHint(b.hit.hint) || a.i - b.i)
+    .map((x) => x.hit);
+}
+
+function rankHint(hint: string | undefined): number {
+  return hint === "BSE" ? 1 : 0;
 }
 
 /** Yahoo shouts some names ("INFOSYS LIMITED"); soften all-caps for display. */
