@@ -341,6 +341,20 @@ an environment characteristic that has bitten more than once, not a one-off.
   hydration mismatch (the React Compiler's `react-hooks/purity` lint catches
   it). Windowed views (the trend chart's range picker) measure from the
   newest *data point*, not from `Date.now()`.
+- **Moving the production domain breaks Google sign-in until Google is told.**
+  `trustHost: true` in `src/auth.ts` means Auth.js computes the OAuth
+  callback URL from whatever host the request actually arrives on, so no
+  code or env var needs to change when the domain does. Google still
+  validates that exact callback URL against a fixed allow-list on the OAuth
+  client, though, so a domain change needs one manual step in
+  [Google Cloud Console](https://console.cloud.google.com/apis/credentials):
+  add `https://<new-domain>/api/auth/callback/google` under Authorized
+  redirect URIs and `https://<new-domain>` under Authorized JavaScript
+  origins, or every sign-in fails with `Error 400: redirect_uri_mismatch`.
+  Also: renaming a Vercel project's **name** does not free up or claim a
+  matching `.vercel.app` subdomain if that subdomain is already taken by an
+  unrelated Vercel user elsewhere; the domain has to be added separately
+  under Settings → Domains and marked Production.
 
 ## Deployment
 

@@ -10,7 +10,7 @@ A **complete personal finance hub** for one user (the owner): investments (India
 mutual funds, US stocks) + bank balances + credit cards + SIPs + credit score, unified into a
 single **net-worth** view, plus a Tickertape-style **mutual-fund overlap/sector analysis**.
 Holds sensitive data, so "nobody but me" security is first-class.
-**Live:** https://finance-manager-17xp.vercel.app
+**Live:** https://corpusfinance.vercel.app
 
 ### Locked decisions
 - Net worth = assets (investments + bank + other assets) − liabilities (credit-card outstanding).
