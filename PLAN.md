@@ -1,6 +1,8 @@
 # Personal Finance Hub: Plan & Status (v3)
 
-_Last updated 2026-08-07. This file is the source of truth for what's built vs. what's next._
+_Last updated 2026-08-08. This file is the changelog: what's built and the reasoning and bugs
+behind each change, in the order it happened. For the standing architecture and design
+decisions, see [`ARCHITECTURE.md`](ARCHITECTURE.md). For what's next, see [`TODO.md`](TODO.md)._
 _Mirrored from the Claude Code plan; kept in-repo so it's openable on GitHub / the Claude app._
 
 ## Context
@@ -20,13 +22,13 @@ Holds sensitive data, so "nobody but me" security is first-class.
 - Next.js 16 (App Router) + TS monolith · PostgreSQL (Neon) + **Prisma 7** (pg adapter,
   `prisma.config.ts`, client → `src/generated/prisma`, gitignored).
 - Auth.js v5 (Google, **database sessions**) · Tailwind v4 + shadcn (base-nova/Base UI) ·
-  **recharts 3.9** · **vitest** (91 tests) · dark-first · money always `Decimal`.
+  **recharts 3.9** · **vitest** (99 tests) · dark-first · money always `Decimal`.
 - **Env vars**: `DATABASE_URL`, `AUTH_SECRET`, `AUTH_GOOGLE_ID/SECRET`, `OWNER_EMAIL`,
   `ENCRYPTION_KEY` (32-byte b64), `PRICE_STALE_HOURS`, `CRON_SECRET`.
 
 ---
 
-## ✅ Delivered (all verified: `tsc` clean, `next build` green, 91 tests pass)
+## ✅ Delivered (all verified: `tsc` clean, `next build` green, 99 tests pass)
 
 - [x] **M1 Setup**: scaffold, shadcn, dark theme, Prisma+Neon, app shell (sidebar/topbar/mobile nav).
 - [x] **M2 Auth**: Google OAuth, DB sessions, `/login`, protected `(dashboard)`, user menu + sign-out.
@@ -131,8 +133,8 @@ permanent once saved.
 Verified end to end against the live app on a throwaway holding, then removed: searched a fund,
 confirmed all four plan variants were distinguishable, added it at 100 units and ₹50, topped it up
 by ₹25,000 dated 4 Aug, and every figure matched a hand calculation exactly (267.787805 units at
-NAV 93.3575, 367.787805 units, ₹81.568773 average, ₹30,000 invested, HDFC down exactly ₹25,000).
-Real positions were never touched.
+NAV 93.3575, 367.787805 units, ₹81.568773 average, ₹30,000 invested, the linked account down
+exactly ₹25,000). Real positions were never touched.
 
 Note: top-ups still only mutate the holding. They record no date, so they remain invisible to
 XIRR. They are the obvious first writer to the `Transaction` model in Phase 2.
@@ -155,8 +157,9 @@ All five returned HTTP 404. The other 29 were pricing daily and were fine.
   the same stored symbol.
 
 After the fix: 34 instruments priced, 0 stale. The corrections moved real money, most
-of it hidden in one position: `TMCV` on Paytm was up ₹2,102 that had never shown.
-Note its cost basis is pre-demerger and probably wants apportioning across TMCV/TMPV.
+of it hidden in one position: `TMCV` on Paytm was up a meaningful, previously-invisible amount.
+Checked against the broker's own app afterward: invested and returns matched exactly, so the
+pre-demerger cost basis is correct as reported and was not adjusted further.
 
 ### Stale-price guard (2026-08-07)
 The five above went unnoticed for six weeks because a wrong symbol fails **silently**:
@@ -185,6 +188,19 @@ Surfaced as the first dashboard nudge, naming the symbols. Verified both ways ag
 live data: silent on the healthy portfolio, and on rolling `VENTURA` back to its old
 prices it reported "1 holding is not pricing (VENTURA). The symbol is probably wrong."
 
+### Net-worth chart: a 1W range, and an axis that actually scales (2026-08-07/08)
+- [x] **Added a `1W` range** ahead of the existing 1M/3M/6M/1Y/3Y/5Y. A month was too coarse
+      to see what a single SIP debit or a lump-sum purchase did to net worth.
+- [x] **The y-axis was pinned to zero.** recharts defaults a numeric axis to `[0, 'auto']`
+      (confirmed in the library source, not guessed). For a net worth that never approaches
+      zero, that put every point in the top fifth of the plot with solid fill beneath it, which is also why
+      switching ranges barely looked different: the top of the scale is the maximum, and the
+      maximum is similar in every window. `niceDomain()` (`lib/networth/trend-range.ts`) now
+      fits the axis to the values on screen, padded 8% and rounded to a step of 1/2/5 × a
+      power of ten so ticks stay readable, never showing negative space for an all-positive
+      series. Measured on live data: the line went from ~21% of the plot height (pinned to
+      the top) to 43-46%, and `1W` now has visibly different geometry from `1M`.
+
 ### Bug fix (2026-07-31): SIP dates never refreshed
 Two bugs, both fixed:
 1. `nextDate` was only written by `saveSip`, so it froze at whatever was computed when the plan
@@ -210,18 +226,19 @@ Covered by 6 new tests in `src/lib/sips/schema.test.ts`.
   seven funds have `externalId` pinned to their AMFI scheme code so matching is exact.
 - **Holdings were stored as `quantity = 1` with the rupee amount in `avgBuyPrice`.** That only
   survived because NAVs were broken. The first working refresh would have written a real per-unit
-  NAV against a quantity of 1 and shown a ₹15,323 fund as ₹10. Converted all seven to real units
-  and real average NAV, reconciled to the figures on 31 Jul 2026 (invested ₹53,397, current
-  ₹56,897, returns ₹3,500). Values are now self-updating and survived a live refresh unchanged.
+  NAV against a quantity of 1 and shown a several-thousand-rupee fund as ₹10. Converted all seven
+  to real units and real average NAV, reconciled to the real portfolio figures on 31 Jul 2026.
+  Values are now self-updating and survived a live refresh unchanged.
 - **Added a stale-units nudge**: `countStaleMutualFunds()` flags any fund whose units have not
   changed in 15 days, since NAVs move on their own but a lump-sum purchase has to be entered.
 
-Note: XIRR still cannot be computed (see Phase 2). The 13.41% figure comes from the broker.
+Note: XIRR still cannot be computed (see Phase 2). The return figure the app cannot yet reproduce
+comes from the broker.
 
 ### ✅ Phase 1.5: SIP auto-apply to holdings (done 2026-08-02)
 SIP debits now update holdings. Previously a `SipPlan` stored only the schedule and nothing added
 the purchased units to the `Holding`, so after every debit the app understated units and invested
-until the position was edited by hand. That is why the numbers had drifted about ₹7,000 below
+until the position was edited by hand. That is why the numbers had drifted meaningfully below
 reality by 31 Jul 2026.
 
 **The debit date and the allotment date are not the same date.** A debit scheduled for the 1st
@@ -254,10 +271,10 @@ data: 15 Aug 2025 (Independence Day) and every weekend are simply absent from it
       that is a dead scheme or a wrong code, not a holiday.
 - [x] Only `MONTHLY` plans auto-apply. `WEEKLY`/`QUARTERLY` store no anchor date, so generating
       monthly dates for a quarterly plan would buy three times the units. Left for Phase 2.
-- [x] Surfaced on `/holdings` and `/funds`: "Applied 1 Jul at NAV ₹9.89 · 303.1987 units ·
-      ₹3,000 from HDFC Bank ••4583", showing both dates whenever the allotment shifted, and each
-      SIP row carries "· from HDFC Bank ••4583" so the linked account is visible without opening
-      the dialog.
+- [x] Surfaced on `/holdings` and `/funds` in the shape "Applied [date] at NAV [price] ·
+      [units] units · [amount] from [Bank] ••[last 4]", showing both dates whenever the
+      allotment shifted, and each SIP row carries "· from [Bank] ••[last 4]" so the linked
+      account is visible without opening the dialog.
 - [x] **Backfill decision: start from the reconciliation date, do not invent history.** Past
       debits are recorded nowhere, so `SipPlan.applyFrom` marks the last date already inside the
       stored quantity and only debits strictly after it are applied. The four existing plans were
@@ -278,87 +295,23 @@ data: 15 Aug 2025 (Independence Day) and every weekend are simply absent from it
       - The balance is allowed to go **negative** on purpose. It is user-maintained, so a
         shortfall means it has gone stale, and clamping would hide exactly the kind of silent
         drift this whole phase exists to remove.
-      - All four plans are linked to HDFC Bank ••4583 (₹7,000/month against ₹36,106.50).
+      - All four plans are linked to the same bank account, with several months of headroom
+        at that account's balance against the combined monthly commitment.
 
 Verified end to end against the live database: two missed debits (1 Jun, 1 Jul) were caught up in
 order at their real published NAVs, quantity and invested matched a hand calculation to the paisa,
-HDFC fell by exactly ₹6,000 while invested rose by exactly ₹6,000, re-running applied nothing and
-did not double-debit the bank, and the test state was then restored. The current live state is the
-day-1 SIP correctly *waiting*, because 1 Aug 2026 was a Saturday and Monday's NAV is not out yet.
+the linked account fell by exactly the amount debited while invested rose by the same amount,
+re-running applied nothing and did not double-debit the bank, and the test state was then restored.
+The current live state is the day-1 SIP correctly *waiting*, because 1 Aug 2026 was a Saturday and
+Monday's NAV is not out yet.
 
 ---
 
-## 🔲 Remaining backlog
+## Remaining backlog
 
-Ordered. Each phase leaves the app deployable.
-
-### Phase 1: Brand finish
-- [ ] **Logo pass**: the current mark works but has only been checked at 22px and 32px. Test at
-      16px (browser tab), 180px (`apple-icon.png`), and on a light background. Add `apple-icon`
-      and a static `opengraph-image` so shared links render properly. Consider a lockup variant
-      with the wordmark for the README.
-- [ ] **Landing hero animation: the assembly.** Replace the current converging-arcs SVG with pie
-      slices that fly in and snap together into a complete donut.
-      - 5 donut segments, one per source (Groww, Paytm Money, INDmoney, HDFC, ICICI), each in a
-        chart colour, drawn as SVG arc paths around a shared centre.
-      - Each slice starts pushed out along its own radial vector, rotated a few degrees, at zero
-        opacity. It flies inward fast on a sharp ease-out (roughly 450ms), staggered about 80ms
-        apart, and lands with a small overshoot so it reads as a snap rather than a fade.
-      - On the final slice landing, fire the impact: a brass ring scales outward from the centre
-        and fades, the whole graphic gets a one-frame brightness lift, and the net worth number
-        starts counting up. That is the "thunder" beat.
-      - Slice labels fade in around the ring afterwards, so the composition reads before the text.
-      - Implementation: CSS keyframes with a per-slice `--delay` and `--angle` custom property,
-        the same pattern as the existing `.rise` and `.draw` utilities. No animation library needed.
-      - This is on-brand by construction: the logo is a segmented ring, so the hero assembling a
-        ring from parts is the mark being built in front of you.
-      - Must render fully assembled and static under `prefers-reduced-motion`.
-- [ ] **Loading and empty states**: skeletons for the Overview tiles, tables and charts. Refresh
-      the remaining empty states to the new system.
-
-### Phase 2: XIRR (needs a schema change first)
-**Blocker found 2026-07-07:** nothing in the database stores *when* an investment was made.
-`Holding` has `quantity` and `avgBuyPrice` only, and `createdAt` is when the row was typed into
-the app, not when the money was invested. XIRR is a function of cash-flow *dates*, so it cannot
-be computed from the current schema at all. Two ways forward:
-
-- **Option A (recommended): add a `Transaction` model.** `userId`, `instrumentId`, `type`
-  (BUY/SELL/DIVIDEND), `quantity`, `pricePerUnit`, `date`, `source`. Derive `quantity` and
-  `avgBuyPrice` on `Holding` from the transactions rather than storing them by hand. This gives
-  true XIRR, and it is the same table CSV import and a future ledger both need, so the work is
-  not XIRR-specific.
-- **Option B: add a single `purchaseDate` to `Holding`.** Much cheaper, but it only supports an
-  approximate, single-cash-flow return per position and it is a dead end for CSV import.
-
-Then:
-- [ ] `lib/portfolio/xirr.ts`: Newton-Raphson solver with a bisection fallback for the cases where
-      Newton diverges, plus unit tests against a known-answer fixture (compare with a spreadsheet
-      XIRR).
-- [ ] Show XIRR per holding and for the whole portfolio, next to the existing absolute return.
-- [ ] Backfill: a Settings screen to attach dates to existing positions, since 36 holdings already
-      exist without them.
-
-### Phase 3: Data in and out
-- [ ] **CSV import** (`/import` is still a placeholder): upload, validate, preview, then commit
-      with idempotent upserts so re-uploading the same file never doubles a position. Maps to the
-      `Transaction` model from Phase 2.
-- [ ] **PDF export**: a Download button producing (a) investments (holdings, allocation, returns)
-      and (b) the full analysis (net worth, app-wise, fund overlap and sector exposure, credit).
-      Either `@react-pdf/renderer` or a print route rendered to PDF. Must respect masking, so no
-      full account numbers reach the file.
-
-### Phase 4: It reaches you
-- [ ] **PWA**: `manifest.webmanifest`, maskable icons, standalone display, a light service worker
-      for the app shell, so Corpus installs to the home screen and opens without browser chrome.
-- [ ] **Reminders**: card due dates and SIP debits over WhatsApp, SMS or email, driven by the
-      existing daily cron. Needs a Twilio or SendGrid account.
-
-### Phase 5: Depth
-- [ ] Transactions and dividend tracking (falls out of Phase 2), watchlist, goal tracking
-      (target net worth with a progress read), capital gains and tax estimate, benchmark
-      comparison against NIFTY and the S&P 500, CAS PDF import.
-- [ ] Backup and encrypted export, TOTP as a second factor on top of the passphrase.
-- [ ] Error monitoring (Sentry), and set the Vercel function region to `sin1` to sit next to Neon.
+Moved to [`TODO.md`](TODO.md), which is now the single ordered backlog (it separates
+correctness/safety work from features from brand polish, rather than the phase numbering
+this file used to carry). This file stays the changelog of what has already shipped.
 
 ---
 
@@ -370,19 +323,5 @@ Then:
   sample data works well.
 - DB spot-checks via a throwaway `node` + Prisma script.
 
-## Known gotchas (learned the hard way)
-- **Turbopack caches CSS aggressively.** After editing `globals.css` tokens, a stale `.next` will
-  keep serving the old palette and silently drop new rules. If styles look wrong, `rm -rf .next`
-  and restart before debugging the CSS itself.
-- **Base UI + RSC:** do not pass JSX trigger elements from a Server Component into a Client
-  component and `cloneElement` them ("Element type is invalid"). Client components build their own
-  triggers. Base UI `Button` uses `render`, not `asChild`; pass `nativeButton={false}` for a link.
-- **Prisma schema changes need a dev-server restart** (the client singleton caches in memory).
-- **Groww is unofficial and scraped**, so it can break if their page changes. The graceful refresh
-  keeps the last good holdings when a fetch fails.
-- **A published NAV series doubles as a business-day calendar.** AMFI publishes only on settlement
-  days, so a missing date means a weekend or a holiday. Any "what price applied on date X" question
-  should walk that series rather than reach for a hardcoded holiday list.
-- **Outbound fetches in the daily cron need retries.** A single cold DNS/TLS handshake failed about
-  one run in three from the Next server while succeeding instantly from curl.
-- **No em dashes**, anywhere, in copy or comments.
+Known gotchas moved to [`ARCHITECTURE.md`](ARCHITECTURE.md#known-gotchas), alongside the design
+decisions each one is entangled with.
