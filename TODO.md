@@ -97,17 +97,39 @@ today. Convert what we can, and surface anything else rather than silently dropp
 
 ## 6. Housekeeping
 
-- **Rename everything from "finance-manager" to "Corpus."** The app is called Corpus
-  everywhere it matters (the UI, the logo, `PLAN.md`, `ARCHITECTURE.md`), but the
-  infrastructure around it still carries the old working name:
-  - GitHub repo: `Pratishbansal20/Finance-Manager`
-  - Three separate Vercel projects: `finance-manager`, `finance-manager-17xp`,
-    `finance-manager-25sn`, including the live URL every doc links to
-  - Anywhere else the name shows up once these move: `package.json`'s `name` field
-    (currently `portfolio-dashboard`, also not "Corpus"), and any hardcoded links to the
-    current `finance-manager-17xp.vercel.app` URL in the docs
-  Do the rename before adding more content that will link to today's URLs, since every
-  link added before the rename is one more place to fix after.
+- **Finish the finance-manager to Corpus rename on Vercel.** The GitHub repo, the
+  `package.json` name, the outbound User-Agent string, and the local dev launch config are
+  done: everything is `corpus` now except Vercel, which cannot be done from here (no Vercel
+  CLI or token available in this environment). Three separate Vercel projects are connected
+  to the repo (`finance-manager`, `finance-manager-17xp`, `finance-manager-25sn`), all
+  deploying independently on every push, all under `pratishbansal20s-projects`. That almost
+  certainly means the repo was imported into Vercel more than once, and it is not just
+  clutter: `vercel.json` defines a daily cron, so if all three have an active production
+  deployment, all three are independently hitting `/api/cron/refresh` every day. The SIP
+  application logic is idempotent against the database either way, but this triples the
+  outbound calls to Yahoo/AMFI/mfapi for no reason, and it's worth confirming all three
+  even point at the same `DATABASE_URL` before assuming the extra runs are harmless.
+
+  In order:
+  1. On [vercel.com](https://vercel.com/pratishbansal20s-projects), open each of the three
+     projects' **Settings → Environment Variables** and confirm which one (if not all)
+     actually has the real `DATABASE_URL`, `AUTH_SECRET`, `AUTH_GOOGLE_ID/SECRET`,
+     `OWNER_EMAIL`, `ENCRYPTION_KEY`, `PRICE_STALE_HOURS` and `CRON_SECRET` set. `finance-manager-17xp`
+     is the one referenced everywhere as "Live," so it's the presumed keeper, but check
+     rather than assume, in case env vars were ever split across projects by accident.
+  2. Once the real one is confirmed, go to its **Settings → Git** and re-confirm it is
+     connected to `Pratishbansal20/corpus` (GitHub's rename should have carried the
+     connection automatically, since Vercel tracks by repo ID, but this is worth a look
+     rather than trusting it blind).
+  3. On that same project, **Settings → General → Project Name**, rename it to `corpus`. If
+     the `corpus.vercel.app` subdomain is already taken by someone else on Vercel globally,
+     it will suffix automatically the same way `17xp`/`25sn` did; note whatever it lands on.
+  4. On the other two projects, double-check they have no environment variables the keeper
+     is missing, then delete them from **Settings → General → Delete Project**. This stops
+     the daily cron from running three times and stops three sets of build minutes being
+     spent on every push.
+  5. Come back with the final production URL so the `Live:` link in `README.md` and
+     `PLAN.md` (still pointing at `finance-manager-17xp.vercel.app`) can be updated to match.
 - **Pre-existing lint errors** (11, none from recent work): two `any` in `holdings-table`,
   seven `react-hooks/static-components` in the same file, a `setState`-in-effect in the
   animated counter, an `any` in `seed-portfolio`, an unused import in `cards/queries`.

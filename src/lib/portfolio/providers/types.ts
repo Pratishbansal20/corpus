@@ -36,6 +36,6 @@ export function utcDay(d: Date): Date {
 }
 
 export const FETCH_HEADERS = {
-  "User-Agent": "portfolio-dashboard/1.0 (+personal finance hub)",
+  "User-Agent": "corpus/1.0 (+personal finance hub)",
   Accept: "text/plain, application/json, */*",
 } as const;
