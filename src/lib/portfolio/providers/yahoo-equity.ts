@@ -1,11 +1,7 @@
 import { Prisma } from "@/generated/prisma";
 import type { Instrument } from "@/generated/prisma";
-import {
-  FETCH_HEADERS,
-  utcDay,
-  type PriceProvider,
-  type PriceQuote,
-} from "./types";
+import { fetchWithRetry } from "@/lib/http/fetch-retry";
+import { utcDay, type PriceProvider, type PriceQuote } from "./types";
 
 const YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart";
 
@@ -42,7 +38,17 @@ async function quoteFor(
 ): Promise<PriceQuote | null> {
   const url = `${YAHOO_CHART}/${encodeURIComponent(symbol)}?interval=1d&range=1d`;
 
-  const res = await fetch(url, { headers: FETCH_HEADERS, cache: "no-store" });
+  // Retries on a network-level failure (cold DNS/TLS, a dropped connection),
+  // but a clean 404 returns immediately rather than burning a retry on it:
+  // that is Yahoo saying "not listed here", which is how a BSE-only stock
+  // like Ventura Textiles is expected to answer on its first (NSE) try before
+  // falling through to the next symbol below.
+  let res: Response;
+  try {
+    res = await fetchWithRetry(url);
+  } catch {
+    return null;
+  }
   if (!res.ok) return null;
 
   const json = (await res.json()) as YahooChartResponse;

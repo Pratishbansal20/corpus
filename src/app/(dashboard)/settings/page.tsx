@@ -1,4 +1,4 @@
-import { Shield, ShieldCheck, User, Activity } from "lucide-react";
+import { Shield, ShieldCheck, User, Activity, FileDown } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -7,6 +7,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { requireUser } from "@/lib/auth/require-user";
 import {
   getCreditScores,
@@ -102,6 +103,35 @@ export default async function SettingsPage() {
             </p>
           </CardContent>
         )}
+      </Card>
+
+      {/* Export */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="bg-primary/10 text-primary flex size-10 items-center justify-center rounded-xl">
+                <FileDown className="size-5" />
+              </div>
+              <div>
+                <CardTitle className="text-base">Export</CardTitle>
+                <CardDescription>
+                  Investments and a full net-worth analysis as a PDF.
+                </CardDescription>
+              </div>
+            </div>
+            <Button render={<a href="/api/export/report" download />}>
+              Export PDF
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground text-xs">
+            Bank accounts and cards appear masked to the last 4 digits, the
+            same as on screen. Full account numbers are never fetched to
+            build this file.
+          </p>
+        </CardContent>
       </Card>
 
       {/* Credit scores */}

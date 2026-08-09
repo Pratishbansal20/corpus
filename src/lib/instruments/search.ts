@@ -1,5 +1,5 @@
 import type { InstrumentType } from "@/generated/prisma";
-import { FETCH_HEADERS } from "@/lib/portfolio/providers/types";
+import { fetchOkWithRetry } from "@/lib/http/fetch-retry";
 
 /**
  * Searching for something to buy, by name.
@@ -162,23 +162,11 @@ const SEARCH_TIMEOUT_MS = 12_000;
 const SEARCH_ATTEMPTS = 2;
 
 async function fetchJson(url: string): Promise<unknown> {
-  let lastError: unknown;
-
-  for (let attempt = 1; attempt <= SEARCH_ATTEMPTS; attempt++) {
-    try {
-      const res = await fetch(url, {
-        headers: FETCH_HEADERS,
-        cache: "no-store",
-        signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
-      });
-      if (!res.ok) throw new Error(`search failed (${res.status})`);
-      return await res.json();
-    } catch (e) {
-      lastError = e;
-    }
-  }
-
-  throw lastError instanceof Error ? lastError : new Error("search failed");
+  const res = await fetchOkWithRetry(url, {
+    attempts: SEARCH_ATTEMPTS,
+    timeoutMs: SEARCH_TIMEOUT_MS,
+  });
+  return res.json();
 }
 
 /**

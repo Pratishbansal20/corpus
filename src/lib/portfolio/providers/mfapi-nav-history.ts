@@ -1,4 +1,4 @@
-import { FETCH_HEADERS } from "./types";
+import { fetchOkWithRetry } from "@/lib/http/fetch-retry";
 
 // Historical NAV per scheme, keyed by AMFI scheme code (the same code pinned to
 // Instrument.externalId for the AMFI daily-NAV provider, so no extra mapping).
@@ -84,34 +84,20 @@ const FETCH_ATTEMPTS = 3;
 const FETCH_TIMEOUT_MS = 15_000;
 
 export async function fetchNavHistory(schemeCode: string): Promise<NavHistory> {
-  let lastError: unknown;
-
-  for (let attempt = 1; attempt <= FETCH_ATTEMPTS; attempt++) {
-    try {
-      const res = await fetch(MFAPI_SCHEME_URL(schemeCode), {
-        headers: FETCH_HEADERS,
-        cache: "no-store",
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      });
-      if (!res.ok) {
-        throw new Error(
-          `NAV history fetch failed for ${schemeCode} (${res.status})`,
-        );
-      }
-      return parseNavHistory(schemeCode, await res.json());
-    } catch (e) {
-      lastError = e;
-      if (attempt < FETCH_ATTEMPTS) {
-        await new Promise((r) => setTimeout(r, 500 * attempt));
-      }
-    }
+  try {
+    const res = await fetchOkWithRetry(MFAPI_SCHEME_URL(schemeCode), {
+      attempts: FETCH_ATTEMPTS,
+      timeoutMs: FETCH_TIMEOUT_MS,
+      retryDelayMs: (attempt) => 500 * attempt,
+    });
+    return parseNavHistory(schemeCode, await res.json());
+  } catch (e) {
+    throw new Error(
+      `NAV history for ${schemeCode} failed after ${FETCH_ATTEMPTS} attempts: ${
+        e instanceof Error ? e.message : "unknown error"
+      }`,
+    );
   }
-
-  throw new Error(
-    `NAV history for ${schemeCode} failed after ${FETCH_ATTEMPTS} attempts: ${
-      lastError instanceof Error ? lastError.message : "unknown error"
-    }`,
-  );
 }
 
 /**

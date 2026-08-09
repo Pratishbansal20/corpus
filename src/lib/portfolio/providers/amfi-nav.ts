@@ -1,11 +1,7 @@
 import { Prisma } from "@/generated/prisma";
 import type { Instrument } from "@/generated/prisma";
-import {
-  FETCH_HEADERS,
-  utcDay,
-  type PriceProvider,
-  type PriceQuote,
-} from "./types";
+import { fetchOkWithRetry } from "@/lib/http/fetch-retry";
+import { utcDay, type PriceProvider, type PriceQuote } from "./types";
 
 // AMFI's daily NAV dump for every scheme. The previous value here
 // (portal.amfiindia.com/spp/navAll.aspx) had been returning 404 since before
@@ -101,13 +97,26 @@ function matchInstrument(
   return best;
 }
 
+// Retried for the same reason as the NAV history provider: this runs once a
+// day, unattended, and a cold DNS/TLS handshake was previously enough to
+// leave every mutual fund on its seeded price until the next run.
+const FETCH_ATTEMPTS = 3;
+const FETCH_TIMEOUT_MS = 15_000;
+
 export async function fetchAmfiNavMap(): Promise<Map<string, AmfiRow>> {
-  const res = await fetch(AMFI_NAV_ALL_URL, {
-    headers: FETCH_HEADERS,
-    cache: "no-store",
-  });
-  if (!res.ok) {
-    throw new Error(`AMFI NAV fetch failed (${res.status})`);
+  let res: Response;
+  try {
+    res = await fetchOkWithRetry(AMFI_NAV_ALL_URL, {
+      attempts: FETCH_ATTEMPTS,
+      timeoutMs: FETCH_TIMEOUT_MS,
+      retryDelayMs: (attempt) => 500 * attempt,
+    });
+  } catch (e) {
+    throw new Error(
+      `AMFI NAV fetch failed after ${FETCH_ATTEMPTS} attempts: ${
+        e instanceof Error ? e.message : "unknown error"
+      }`,
+    );
   }
   const text = await res.text();
   const map = parseAmfiNavFile(text);
