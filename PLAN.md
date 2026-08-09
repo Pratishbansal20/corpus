@@ -1,6 +1,6 @@
 # Personal Finance Hub: Plan & Status (v3)
 
-_Last updated 2026-08-08. This file is the changelog: what's built and the reasoning and bugs
+_Last updated 2026-08-10. This file is the changelog: what's built and the reasoning and bugs
 behind each change, in the order it happened. For the standing architecture and design
 decisions, see [`ARCHITECTURE.md`](ARCHITECTURE.md). For what's next, see [`TODO.md`](TODO.md)._
 _Mirrored from the Claude Code plan; kept in-repo so it's openable on GitHub / the Claude app._
@@ -304,6 +304,38 @@ the linked account fell by exactly the amount debited while invested rose by the
 re-running applied nothing and did not double-debit the bank, and the test state was then restored.
 The current live state is the day-1 SIP correctly *waiting*, because 1 Aug 2026 was a Saturday and
 Monday's NAV is not out yet.
+
+### Central fetch-retry, and PDF export (2026-08-10)
+
+**One retry helper instead of three.** Retry-with-timeout had been copy-pasted into the
+NAV history provider and search, and the Yahoo and AMFI providers had none at all, so a
+cold-start DNS/TLS handshake (measured at 8-9s here) could still silently leave a mutual
+fund on its seeded NAV or a stock unpriced. `lib/http/fetch-retry.ts` is now the one place
+that owns it: `fetchWithRetry()` retries a network-level failure (the fetch throwing, or
+the timeout firing) up to `attempts` times, and returns whatever response it gets on the
+last attempt whether or not it's ok, so a non-ok status is never itself a reason to retry.
+That distinction matters for Yahoo specifically: a 404 there means "not listed on this
+exchange", which is how a BSE-only stock like Ventura Textiles is supposed to fall through
+from `.NS` to `.BO`, and retrying an expected miss would only slow that down.
+`fetchOkWithRetry()` adds the `res.ok` check back for callers that just want JSON or a
+thrown error. Search and the NAV history provider had their bespoke loops retired in favour
+of it; Yahoo and AMFI gained retry they never had.
+
+**PDF export**, reachable from Settings. `lib/pdf/report-data.ts` gathers net worth,
+the full portfolio (holdings, allocation by asset class and country, the app-wise "where
+it lives" breakdown), bank accounts and credit cards into one plain object, and
+`lib/pdf/build-report-pdf.ts` renders it with `jspdf` + `jspdf-autotable`. Nothing here
+reaches for a full account number or IFSC: the query layer that already masks the
+dashboard to `•• 1234` is the same one this reads from, so there is nothing to redact at
+render time because it was never fetched in the first place. `GET /api/export/report` is
+gated by `requireUnlocked()` like every other page and streams the PDF as an attachment.
+
+One real bug along the way: jsPDF's built-in fonts (Helvetica, Courier) only cover
+WinAnsi's Latin range, and ₹ falls outside it and rendered as a missing-glyph box.
+Money in the PDF is formatted as "Rs. 12,34,567" instead of reusing `formatInr()`'s
+`Intl.NumberFormat` currency style, which is what prints the ₹ glyph. A test asserts the
+byte stream never contains the raw glyph, so a future call site that reaches for
+`formatInr` here by habit fails immediately instead of shipping a report with boxes in it.
 
 ---
 

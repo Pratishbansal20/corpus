@@ -1,6 +1,6 @@
 # Corpus: TODO
 
-_Last updated 2026-08-08. Ordered by what unblocks the most. `PLAN.md` holds the
+_Last updated 2026-08-10. Ordered by what unblocks the most. `PLAN.md` holds the
 history of what is already built and why._
 
 > **Working agreement:** nothing here gets executed without agreeing the approach
@@ -32,7 +32,6 @@ Cheap, and each one closes a hole that has already cost us something.
 | Item | Why |
 |---|---|
 | **CI on pull requests** | `tsc`, `vitest` and `next build` only ever run on my machine. Nothing stops a broken commit reaching `main` and deploying. |
-| **Central fetch-retry helper** | Retry-with-timeout is copy-pasted in the NAV history provider and search; the Yahoo and AMFI providers still have none. Cold-start failures have bitten twice. |
 | **Reverse a SIP execution** | A bounced mandate means the app bought units reality did not. `SipExecution` records enough to undo it, but there is no way to. |
 | **Weekly and quarterly SIPs** | Only `MONTHLY` auto-applies. The others store no anchor date, so monthly dates would over-buy them. Falls out of the `Transaction` model. |
 
@@ -71,7 +70,6 @@ today. Convert what we can, and surface anything else rather than silently dropp
 |---|---|
 | **XIRR**, per holding and portfolio-wide, with a backfill screen for existing positions | `Transaction` |
 | **CSV import** (`/import` is still a placeholder): upload, validate, preview, idempotent commit | `Transaction` |
-| **PDF export**: investments + full analysis, respecting masking so no full account numbers reach the file | |
 | **Dividend tracking** | `Transaction` |
 | **Capital gains and tax estimate** | `Transaction`, corporate actions |
 | **Benchmark comparison** against NIFTY and the S&P 500 | backfill |
