@@ -1,6 +1,12 @@
 import type { Prisma } from "@/generated/prisma";
 import type { Instrument } from "@/generated/prisma";
 
+// Re-exported so existing call sites (`@/lib/portfolio/providers/types`)
+// don't all need to change import paths for the one thing most of them use.
+// The canonical source is `@/lib/http/fetch-retry`, which every provider now
+// fetches through.
+export { FETCH_HEADERS } from "@/lib/http/fetch-retry";
+
 export type PriceQuote = {
   instrumentId: string;
   price: Prisma.Decimal;
@@ -35,7 +41,3 @@ export function utcDay(d: Date): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 }
 
-export const FETCH_HEADERS = {
-  "User-Agent": "corpus/1.0 (+personal finance hub)",
-  Accept: "text/plain, application/json, */*",
-} as const;
