@@ -97,17 +97,6 @@ today. Convert what we can, and surface anything else rather than silently dropp
 
 ## 6. Housekeeping
 
-- **Delete the last stale Vercel project.** The finance-manager to Corpus rename is done
-  everywhere else: GitHub repo, `package.json`, the outbound User-Agent string, the local
-  dev launch config, the Vercel project itself (now live at `corpusfinance.vercel.app`,
-  Google OAuth's authorized redirect URIs updated to match). Of the two duplicate projects
-  found connected to the same repo, `finance-manager-25sn` is confirmed deleted. But
-  `finance-manager.vercel.app` (the plain, no-suffix one, the one that only ever had
-  `DATABASE_URL` set) is still live, still serving a stale pre-rebrand build. It's worth
-  deleting rather than ignoring: it has the real `DATABASE_URL`, so if it still has an
-  active production deployment it is plausibly still running `vercel.json`'s daily cron
-  against the real database on its own, from old code, with no one watching it.
-  **Settings → General → Delete Project**, on that one specifically.
 - **Pre-existing lint errors** (11, none from recent work): two `any` in `holdings-table`,
   seven `react-hooks/static-components` in the same file, a `setState`-in-effect in the
   animated counter, an `any` in `seed-portfolio`, an unused import in `cards/queries`.
