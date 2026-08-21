@@ -86,6 +86,12 @@ export async function countStaleMutualFunds(
 export const getUserPortfolio = cache(async function getUserPortfolio(
   userId: string,
 ): Promise<Portfolio> {
+  // The FX rate depends on nothing fetched below, so it's kicked off here
+  // rather than awaited after the holdings/price chain: on a Neon connection
+  // with real network latency per round trip, that turned 3 sequential
+  // round trips into 2 sequential plus 1 in parallel with them.
+  const fxPromise = getUsdInrRate();
+
   const holdings = await prisma.holding.findMany({
     where: { userId },
     include: { instrument: true },
@@ -107,7 +113,7 @@ export const getUserPortfolio = cache(async function getUserPortfolio(
     }
   }
 
-  const { rate, isLive } = await getUsdInrRate();
+  const { rate, isLive } = await fxPromise;
 
   const inputs = holdings.map((h) => ({
     id: h.id,

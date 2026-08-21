@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { auth } from "@/auth";
@@ -6,7 +7,16 @@ import { prisma } from "@/lib/db/prisma";
 // Returns the signed-in user, redirecting to /login if there's no session.
 // Use this in server components and server actions before any per-user query so
 // every data path is scoped to session.user.id and can never leak across users.
-export async function requireUser() {
+//
+// Wrapped in React's cache(): auth() is a database-session lookup (a real DB
+// round trip, not free), and every dashboard page calls requireUser() again
+// on top of the layout's own call inside requireUnlocked(). Auth.js does not
+// deduplicate that itself (checked: no cache() anywhere in its RSC auth()
+// path), so without this every navigation paid for the same session lookup
+// twice. cache() only memoizes within one request, so it changes nothing
+// about what's checked or how often a genuinely new request re-verifies —
+// it just stops one request from asking the same question twice.
+export const requireUser = cache(async function requireUser() {
   const session = await auth();
   if (!session?.user) {
     redirect("/login");
@@ -18,7 +28,7 @@ export async function requireUser() {
     redirect("/login");
   }
   return session.user;
-}
+});
 
 // Auth.js session token cookie names (differ by HTTPS / HTTP).
 const SESSION_COOKIE_PROD = "__Secure-authjs.session-token";
