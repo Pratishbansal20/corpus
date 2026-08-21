@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { prisma } from "@/lib/db/prisma";
 import { getUsdInrRate } from "@/lib/portfolio/fx";
 import { buildPortfolio, type Portfolio } from "@/lib/portfolio/valuation";
@@ -74,7 +75,17 @@ export async function countStaleMutualFunds(
   });
 }
 
-export async function getUserPortfolio(userId: string): Promise<Portfolio> {
+// Wrapped in React's request-scoped `cache()`: the dashboard layout (net
+// worth readout, sync label) and a page's own render both call this in the
+// same request, and each call rebuilds the whole priced portfolio (holdings
+// query, price lookups, an FX rate lookup) from scratch. Before this, one
+// navigation to Holdings ran it three times over: once for the layout's
+// pricing status, once for its net-worth total, once for the page itself.
+// `cache()` collapses repeat calls with the same argument, within one
+// request, to the first call's in-flight promise.
+export const getUserPortfolio = cache(async function getUserPortfolio(
+  userId: string,
+): Promise<Portfolio> {
   const holdings = await prisma.holding.findMany({
     where: { userId },
     include: { instrument: true },
@@ -114,4 +125,4 @@ export async function getUserPortfolio(userId: string): Promise<Portfolio> {
   }));
 
   return buildPortfolio(inputs, { usdInr: rate, fxIsLive: isLive });
-}
+});

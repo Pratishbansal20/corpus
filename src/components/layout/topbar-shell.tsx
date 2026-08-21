@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { Topbar as TopbarInner } from "./topbar";
+import type { NetWorth } from "@/lib/networth/compute";
 import type { PricingStatus } from "@/lib/pricing/queries";
 
 type SessionUser = {
@@ -10,15 +11,17 @@ type SessionUser = {
   image?: string | null;
 };
 
+type ShellData = { netWorth: NetWorth; pricingStatus: PricingStatus };
+
 export function TopbarShell({
   user,
-  pricingStatus,
+  dataPromise,
 }: {
   user: SessionUser;
-  pricingStatus: PricingStatus;
+  dataPromise: Promise<ShellData>;
 }) {
   const pathname = usePathname();
   return (
-    <TopbarInner user={user} pricingStatus={pricingStatus} pathname={pathname} />
+    <TopbarInner user={user} dataPromise={dataPromise} pathname={pathname} />
   );
 }

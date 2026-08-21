@@ -1,7 +1,9 @@
+import { Suspense, use } from "react";
 import { RefreshPricesButton } from "./refresh-prices-button";
 import { UserMenu } from "./user-menu";
 import { WordmarkGlyph } from "./wordmark";
 import { navItems } from "./nav-config";
+import type { NetWorth } from "@/lib/networth/compute";
 import type { PricingStatus } from "@/lib/pricing/queries";
 
 type SessionUser = {
@@ -9,6 +11,8 @@ type SessionUser = {
   email?: string | null;
   image?: string | null;
 };
+
+type ShellData = { netWorth: NetWorth; pricingStatus: PricingStatus };
 
 function currentTitle(pathname: string): string {
   const match = navItems.find(
@@ -19,11 +23,11 @@ function currentTitle(pathname: string): string {
 
 export function Topbar({
   user,
-  pricingStatus,
+  dataPromise,
   pathname,
 }: {
   user: SessionUser;
-  pricingStatus: PricingStatus;
+  dataPromise: Promise<ShellData>;
   pathname: string;
 }) {
   return (
@@ -37,9 +41,18 @@ export function Topbar({
       </div>
 
       <div className="flex shrink-0 items-center gap-2 md:gap-3">
-        <RefreshPricesButton status={pricingStatus} />
+        <Suspense
+          fallback={<div className="skeleton h-8 w-40 rounded-lg" />}
+        >
+          <PricingPill dataPromise={dataPromise} />
+        </Suspense>
         <UserMenu user={user} />
       </div>
     </header>
   );
+}
+
+function PricingPill({ dataPromise }: { dataPromise: Promise<ShellData> }) {
+  const { pricingStatus } = use(dataPromise);
+  return <RefreshPricesButton status={pricingStatus} />;
 }
