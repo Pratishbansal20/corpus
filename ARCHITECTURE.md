@@ -85,13 +85,16 @@ manual "Refresh" button runs, so there's exactly one code path for it.
 src/
   app/
     (dashboard)/<page>/page.tsx   route = feature; layout.tsx gates the group
+    (dashboard)/<page>/loading.tsx  instant nav fallback, one per page
     api/cron/refresh/route.ts     the one scheduled job
     api/export/report/route.ts   PDF export, streamed as an attachment
     api/auth/[...nextauth]/       Auth.js handler
+    apple-icon.tsx, opengraph-image.tsx   generated with next/og, reuse icon.svg's geometry
   components/
     <domain>/                     dialogs, tables: one component file per concern
     ui/                           shadcn/Base UI primitives, generic
     charts/                       recharts wrappers
+    layout/loading/               skeleton-kit.tsx + loading-mark.tsx, shared by every loading.tsx
   lib/
     <domain>/
       schema.ts        Zod validation + pure helpers (date math, labels)
@@ -324,9 +327,23 @@ an expected miss.
 
 ## Known gotchas
 
-- **Turbopack caches CSS aggressively.** After editing `globals.css` tokens,
-  a stale `.next` keeps serving the old palette and silently drops new
-  rules. `rm -rf .next` and restart before debugging the CSS itself.
+- **Turbopack caches aggressively**, and not just CSS. After editing
+  `globals.css` tokens, a stale `.next` keeps serving the old palette and
+  silently drops new rules; a brand-new route file (a metadata route like
+  `opengraph-image.tsx` was the case that surfaced this) can 404 against a
+  stale route manifest until the cache is cleared. `rm -rf .next` and
+  restart before trusting a "this isn't working" from dev.
+- **A `loading.tsx` only wraps the page it's colocated with, not the layout
+  above it.** `(dashboard)/layout.tsx` awaits `requireUnlocked()` (correct:
+  it's the security gate) but must not await anything else, because nothing
+  streams — not even a page's own `loading.tsx` — until an `async` layout's
+  own top-level awaits resolve and it returns JSX. The net-worth and
+  pricing-status data the sidebar/topbar need is fetched there and handed
+  down as an un-awaited `Promise`, consumed with `use()` inside small child
+  components each wrapped in their own `<Suspense>`, so the shell paints
+  immediately and only those two small pieces show a brief shimmer. See
+  [Route-level loading UI](PLAN.md#route-level-loading-ui-and-a-logo-pass-2026-08-21)
+  for the full reasoning.
 - **Base UI + RSC:** don't pass a JSX trigger element from a Server Component
   into a Client Component and `cloneElement` it ("Element type is invalid").
   Client components build their own triggers. Base UI `Button` uses

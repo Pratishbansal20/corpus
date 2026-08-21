@@ -112,21 +112,9 @@ survives that layout variance without a bespoke parser per broker.
 
 ## 5. Brand finish
 
-- **Logo pass**: only checked at 22px and 32px. Test at 16px (browser tab), 180px
-  (`apple-icon.png`), and on light. Add `apple-icon` and a static `opengraph-image`.
 - **Landing hero animation**: replace the converging arcs with pie slices that fly in and
   snap into a complete donut, then a brass impact ring and the net worth counting up.
   Must render assembled and static under `prefers-reduced-motion`.
-- **Route-level loading UI, starting with Holdings.** Nothing under `src/app` has a
-  `loading.tsx`, so a `(dashboard)` tab switch sits frozen on the previous page until the
-  target page's async Server Component fully resolves. Holdings feels worst of the group:
-  it awaits three queries at once, one of them a live USD/INR rate fetch
-  (`getUserPortfolio`, `getSipPlans`, `getSipBankOptions` in
-  `app/(dashboard)/holdings/page.tsx`). A `loading.tsx` per page makes the switch instant
-  (Next swaps it in immediately on navigation, then streams the real page in once it's
-  ready) and should read as a real piece of the brand, not a bolted-on spinner: same
-  brass-and-ink language as the rest of the app. Once the pattern lands for Holdings, the
-  same treatment covers Overview's tiles, tables and charts, and the rest of the dashboard.
 
 ## 6. Housekeeping
 
