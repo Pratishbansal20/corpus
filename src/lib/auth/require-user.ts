@@ -40,29 +40,49 @@ const SESSION_COOKIE_DEV = "authjs.session-token";
  * is allowed through so they can reach Settings to set one.
  *
  * Use this in the `(dashboard)` layout to gate all protected pages.
+ *
+ * The two DB reads below (`userSecurity`, `session`) run in parallel rather
+ * than one-after-the-other. They were sequential only because the code was
+ * written top-to-bottom, not because either depends on the other's result:
+ * the session token comes from the request cookie (already available,
+ * synchronous, no DB) and is not derived from the `userSecurity` row. Running
+ * them concurrently removes one more full round trip to Neon from the
+ * security gate that sits in front of every single dashboard page. The
+ * *decision* logic afterward is untouched, checked in the exact same order
+ * as before: no passphrase set → let through; no cookie → /login; no
+ * `unlockedAt` → /unlock. The only behavioural difference is that the
+ * session lookup now also runs on the one-time first-run path (no
+ * passphrase yet), where its result is simply discarded — a harmless read,
+ * scoped to the caller's own cookie, in exchange for saving a round trip on
+ * every day after that first run.
  */
 export async function requireUnlocked() {
   const user = await requireUser();
 
-  // If the user hasn't set up a passphrase yet, let them through so they can
-  // reach Settings and set one up (first-run experience).
-  const security = await prisma.userSecurity.findUnique({
-    where: { userId: user.id! },
-    select: { id: true },
-  });
-  if (!security) return user;
-
-  // Passphrase exists: check that the current session is unlocked.
   const jar = await cookies();
   const sessionToken =
-    jar.get(SESSION_COOKIE_PROD)?.value ??
-    jar.get(SESSION_COOKIE_DEV)?.value;
-  if (!sessionToken) redirect("/login");
+    jar.get(SESSION_COOKIE_PROD)?.value ?? jar.get(SESSION_COOKIE_DEV)?.value;
 
-  const dbSession = await prisma.session.findUnique({
-    where: { sessionToken },
-    select: { unlockedAt: true },
-  });
+  const [security, dbSession] = await Promise.all([
+    prisma.userSecurity.findUnique({
+      where: { userId: user.id! },
+      select: { id: true },
+    }),
+    sessionToken
+      ? prisma.session.findUnique({
+          where: { sessionToken },
+          select: { unlockedAt: true },
+        })
+      : Promise.resolve(null),
+  ]);
+
+  // If the user hasn't set up a passphrase yet, let them through so they can
+  // reach Settings and set one up (first-run experience). The session lookup
+  // above still ran, but nothing here reads its result in that case.
+  if (!security) return user;
+
+  // Passphrase exists: the session must carry a cookie and be unlocked.
+  if (!sessionToken) redirect("/login");
   if (!dbSession?.unlockedAt) {
     redirect("/unlock");
   }
