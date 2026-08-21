@@ -120,7 +120,10 @@ export default async function SettingsPage() {
                 </CardDescription>
               </div>
             </div>
-            <Button render={<a href="/api/export/report" download />}>
+            <Button
+              nativeButton={false}
+              render={<a href="/api/export/report" download />}
+            >
               Export PDF
             </Button>
           </div>

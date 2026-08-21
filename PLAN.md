@@ -1,6 +1,6 @@
 # Personal Finance Hub: Plan & Status (v3)
 
-_Last updated 2026-08-10. This file is the changelog: what's built and the reasoning and bugs
+_Last updated 2026-08-21. This file is the changelog: what's built and the reasoning and bugs
 behind each change, in the order it happened. For the standing architecture and design
 decisions, see [`ARCHITECTURE.md`](ARCHITECTURE.md). For what's next, see [`TODO.md`](TODO.md)._
 _Mirrored from the Claude Code plan; kept in-repo so it's openable on GitHub / the Claude app._
@@ -336,6 +336,73 @@ Money in the PDF is formatted as "Rs. 12,34,567" instead of reusing `formatInr()
 `Intl.NumberFormat` currency style, which is what prints the ₹ glyph. A test asserts the
 byte stream never contains the raw glyph, so a future call site that reaches for
 `formatInr` here by habit fails immediately instead of shipping a report with boxes in it.
+
+### Route-level loading UI, and a logo pass (2026-08-21)
+
+**Why the Investments tab felt slow to switch to, and it wasn't just Investments.**
+Nothing under `src/app` had a `loading.tsx`, and `(dashboard)/layout.tsx` itself awaited
+`getPricingStatus()` and `getNetWorthTotals()` before returning anything — including the
+`<Suspense>` boundary Next inserts around a page's own `loading.tsx`. A page-level
+`loading.tsx` alone would not have fixed this: the shared layout wraps every dashboard
+page, so as long as it blocked on data, a nav click sat frozen with nothing streaming, no
+matter how fast the target page was. Worse, `getPricingStatus()` and `getNetWorthTotals()`
+each call `getUserPortfolio()` internally, and a page like Holdings called it *again* for
+its own render — one navigation there ran the full priced-portfolio build (holdings query,
+price lookups, an FX rate lookup) three times over.
+
+Fixed in two parts:
+- `getUserPortfolio()` (`lib/holdings/queries.ts`) is now wrapped in React's request-scoped
+  `cache()`, so repeat calls with the same `userId` within one request collapse to the
+  first call's in-flight promise. Three portfolio builds per navigation become one.
+- `(dashboard)/layout.tsx` still awaits `requireUnlocked()` (the security gate: nothing
+  should stream before it resolves) but no longer awaits the net-worth/pricing data. That
+  fetch starts once, un-awaited, and is handed down as a plain `Promise` to `Sidebar` and
+  `TopbarShell`. Each suspends on only the small slice it needs (`use(dataPromise)` inside
+  a child component, wrapped in its own `<Suspense>`), so the nav, wordmark and page
+  content all paint immediately and only the net-worth figure and the sync pill show a
+  brief shimmer.
+
+With the shell unblocked, a `loading.tsx` per dashboard page (`dashboard/`, `holdings/`,
+`funds/`, `accounts/`, `cards/`, `settings/`) now actually does what it looks like it does:
+Next swaps it in the instant a nav click fires, before the target page's data has
+resolved. Each one traces its real page's layout (`components/layout/loading/`
+`skeleton-kit.tsx`: `SkeletonCard`, `SkeletonRow`, `SkeletonStatRail`,
+`SkeletonCompositionLine`, `SkeletonDonut`) so nothing shifts when real content lands, and
+every static label a page doesn't need data for (section headings, the page title) renders
+as real text, not a skeleton, so the page identifies itself before anything else has
+loaded. The one loading signature repeated on every page is `LoadingMark`
+(`loading/loading-mark.tsx`): the same ring-of-arcs as the sidebar wordmark, except the
+brass arc that normally sits still, closing the mark, sweeps around it instead for as long
+as the page is still arriving. A new `.skeleton` shimmer and `.spin-ring` rotation
+(`globals.css`) both go through the existing `prefers-reduced-motion` override, same as
+every other animation in the app.
+
+**Logo pass.** `icon.svg` had only ever been checked at 22px and 32px. Rendered to a
+canvas and sampled at 16px (the actual browser-tab size) and against a white background:
+contrast between the brass arc and the ink backing held up at both (162 of 255 at 16px on
+dark, 237 on white), because the icon carries its own dark card background rather than
+relying on the page behind it, so nothing needed to change there. What was actually
+missing: `apple-icon.tsx` and `opengraph-image.tsx`, neither of which existed. Both are
+generated with `next/og`'s `ImageResponse` reusing `icon.svg`'s exact ring geometry (same
+viewBox, radii, `stroke-dasharray`, colour), so fidelity to the existing mark is exact by
+construction, not eyeballed. `apple-icon.tsx` draws edge to edge with no rounded corners of
+its own, since iOS applies its own corner mask on the home screen and stacking a second
+rounded rect under that produces a visibly inset icon. `opengraph-image.tsx` skips a custom
+font (Bricolage Grotesque would mean a build-time fetch from Google Fonts for one static,
+build-cached image) and instead earns its keep with a small composition-line accent below
+the wordmark — the app's own signature graphic, not a generic dark-mode wordmark card.
+Added `metadataBase` to the root metadata export in the same pass: without it, `next build`
+resolves the generated OG image against `localhost`, which is why the warning only shows
+up in a production build, not `next dev`.
+
+Verified: `tsc --noEmit` clean, all 111 tests green, `next build` prerenders `/apple-icon`
+and `/opengraph-image` as static routes with no warnings. The loading states themselves
+were checked on an unauthenticated scratch route (no session needed: `loading.tsx` exports
+are pure) rendering all six side by side, confirmed error- and hydration-warning-free via
+the console, with the shimmer and ring-spin animations and brand colours confirmed live via
+computed styles. Screenshotting was unavailable in this session, and a session cookie
+couldn't be forged to check the authenticated shell directly (correctly refused as an
+auth-bypass action) — worth a look end to end in a real browser.
 
 ---
 

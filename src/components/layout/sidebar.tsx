@@ -1,18 +1,26 @@
 "use client";
 
+import { Suspense, use } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { formatInr } from "@/lib/money";
+import type { NetWorth } from "@/lib/networth/compute";
+import type { PricingStatus } from "@/lib/pricing/queries";
 import { navItems } from "./nav-config";
 import { Wordmark } from "./wordmark";
 
+type ShellData = { netWorth: NetWorth; pricingStatus: PricingStatus };
+
+// The nav, wordmark and layout render the instant this mounts: nothing here
+// depends on `dataPromise`. Only the two small pieces below that actually
+// need it (the net-worth figure, the sync label) suspend on their own, each
+// in its own boundary, so a slow query never blocks the parts of the sidebar
+// that don't need it.
 export function Sidebar({
-  netWorthInr,
-  syncLabel,
+  dataPromise,
 }: {
-  netWorthInr: number;
-  syncLabel: string;
+  dataPromise: Promise<ShellData>;
 }) {
   const pathname = usePathname();
 
@@ -25,9 +33,13 @@ export function Sidebar({
       {/* The number you opened the app for, on every page. */}
       <div className="border-border mx-5 border-t py-5">
         <p className="eyebrow">Net worth</p>
-        <p className="font-display mt-1.5 text-[1.75rem] leading-none font-semibold tracking-[-0.02em] tabular-nums">
-          {formatInr(netWorthInr)}
-        </p>
+        <Suspense
+          fallback={
+            <div className="skeleton mt-1.5 h-[1.75rem] w-32 rounded-md" />
+          }
+        >
+          <NetWorthFigure dataPromise={dataPromise} />
+        </Suspense>
       </div>
 
       <nav className="flex flex-1 flex-col gap-0.5 px-3 pt-1">
@@ -68,8 +80,24 @@ export function Sidebar({
       </nav>
 
       <div className="border-border text-muted-foreground border-t px-5 py-4 text-xs">
-        {syncLabel}
+        <Suspense fallback={<div className="skeleton h-3 w-28 rounded" />}>
+          <SyncLabel dataPromise={dataPromise} />
+        </Suspense>
       </div>
     </aside>
   );
+}
+
+function NetWorthFigure({ dataPromise }: { dataPromise: Promise<ShellData> }) {
+  const { netWorth } = use(dataPromise);
+  return (
+    <p className="font-display mt-1.5 text-[1.75rem] leading-none font-semibold tracking-[-0.02em] tabular-nums">
+      {formatInr(netWorth.netWorthInr)}
+    </p>
+  );
+}
+
+function SyncLabel({ dataPromise }: { dataPromise: Promise<ShellData> }) {
+  const { pricingStatus } = use(dataPromise);
+  return <>{pricingStatus.label}</>;
 }

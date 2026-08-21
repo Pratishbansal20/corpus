@@ -1,6 +1,6 @@
 # Corpus: TODO
 
-_Last updated 2026-08-10. Ordered by what unblocks the most. `PLAN.md` holds the
+_Last updated 2026-08-21. Ordered by what unblocks the most. `PLAN.md` holds the
 history of what is already built and why._
 
 > **Working agreement:** nothing here gets executed without agreeing the approach
@@ -75,7 +75,33 @@ today. Convert what we can, and surface anything else rather than silently dropp
 | **Benchmark comparison** against NIFTY and the S&P 500 | backfill |
 | **Goal tracking**: target net worth with a progress read | |
 | **Watchlist** | |
-| **CAS PDF import** | `Transaction` |
+
+### PDF / LLM holdings import
+
+A pasted-in PDF, either a CDSL/NSDL/CAMS-KFintech CAS or a broker's own holdings export
+(Groww, Paytm Money, INDmoney), is the fastest way to load a position without typing it in
+by hand, and every source lays the numbers out differently. A fixed-format parser only
+covers one shape; extracting the PDF's text and handing it to an LLM to return structured
+rows (symbol/scheme name, quantity, average price, and a date where the source has one)
+survives that layout variance without a bespoke parser per broker.
+
+- **Text extraction first, vision as fallback.** Every CAS and broker export seen so far is
+  a text-layer PDF, not a scan, so a text-extraction pass is the default attempt; only fall
+  back to a vision-capable call if extraction comes back empty.
+- **The LLM proposes, the existing resolution logic disposes.** Extracted rows still go
+  through the same instrument search / resolution path already built for manual entry
+  (`lib/instruments/search.ts`), never trusted to invent a `symbol` or AMFI `externalId`
+  directly, so a hallucinated ticker fails the same "nothing found" path a manual search
+  miss would, rather than silently creating a bad instrument.
+- **Preview before commit**, the same shape planned for CSV import: show every parsed row
+  against what would be created or topped up, let a wrong row be dropped or corrected by
+  hand, commit only on confirmation. The two imports should end up sharing that pipeline.
+- **Loading current holdings needs no schema change.** A CAS or holdings-export PDF is a
+  snapshot (quantity + average cost), which is exactly `Holding`'s current shape today. A
+  *detailed* CAS (full per-folio transaction history) could backfill real purchase dates
+  for XIRR, but that path depends on `Transaction` landing first, same as CSV import.
+- Open question for build time: CAS PDFs are password-protected with a PAN-derived
+  password, so the upload flow needs a password prompt, not just a file picker.
 
 ## 4. It reaches you
 
@@ -86,12 +112,9 @@ today. Convert what we can, and surface anything else rather than silently dropp
 
 ## 5. Brand finish
 
-- **Logo pass**: only checked at 22px and 32px. Test at 16px (browser tab), 180px
-  (`apple-icon.png`), and on light. Add `apple-icon` and a static `opengraph-image`.
 - **Landing hero animation**: replace the converging arcs with pie slices that fly in and
   snap into a complete donut, then a brass impact ring and the net worth counting up.
   Must render assembled and static under `prefers-reduced-motion`.
-- **Loading and empty states**: skeletons for the Overview tiles, tables and charts.
 
 ## 6. Housekeeping
 
