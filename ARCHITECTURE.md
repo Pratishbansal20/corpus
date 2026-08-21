@@ -86,6 +86,7 @@ src/
   app/
     (dashboard)/<page>/page.tsx   route = feature; layout.tsx gates the group
     api/cron/refresh/route.ts     the one scheduled job
+    api/export/report/route.ts   PDF export, streamed as an attachment
     api/auth/[...nextauth]/       Auth.js handler
   components/
     <domain>/                     dialogs, tables: one component file per concern
@@ -99,6 +100,8 @@ src/
       constants.ts       types/labels safe to import from client components
       *.test.ts          co-located with the module they test
     portfolio/providers/         PriceProvider / FxProvider implementations
+    http/fetch-retry.ts          the one retry-with-timeout wrapper every outbound fetch uses
+    pdf/                         report-data.ts (gather) + build-report-pdf.ts (render)
     db/prisma.ts                 the one PrismaClient singleton
     crypto/encryption.ts         AES-256-GCM field encryption
   generated/prisma/              Prisma client output, gitignored
@@ -294,16 +297,22 @@ each is allowed to fail independently.
 
 Outbound fetches from a cold Next.js server process have been measured at
 8–9 seconds for the *first* call in a process, versus well under a second
-after. Every provider that can be hit cold (NAV history, instrument search)
-retries at least once on a generous timeout for exactly this reason. It is
-an environment characteristic that has bitten more than once, not a one-off.
+after. It is an environment characteristic that has bitten more than once,
+not a one-off, so every provider fetches through `fetchWithRetry()`
+(`lib/http/fetch-retry.ts`) rather than a bare `fetch`: it retries a
+network-level failure (the fetch throwing, or its timeout firing) up to
+`attempts` times, but a non-ok HTTP status is never itself a reason to
+retry, since Yahoo relies on a clean 404 to mean "not listed on this
+exchange" and fall through from `.NS` to `.BO` without wasting a retry on
+an expected miss.
 
 ## Testing and verification
 
 - `npm test` (vitest), `tsc --noEmit`, `npm run build`: all three green
-  before anything is considered done. 99 tests as of this writing, entirely
+  before anything is considered done. 111 tests as of this writing, entirely
   unit-level: date/calendar math, Decimal arithmetic, provider parsing,
-  schema validation. No end-to-end test suite.
+  schema validation, PDF-byte assertions for the export. No end-to-end test
+  suite.
 - Authenticated pages can't be screenshotted headlessly (the session cookie
   is `httpOnly`), so verification against the live app seeds a temporary
   pre-unlocked `Session` row, drives the real UI or curls the route with that
@@ -341,6 +350,14 @@ an environment characteristic that has bitten more than once, not a one-off.
   hydration mismatch (the React Compiler's `react-hooks/purity` lint catches
   it). Windowed views (the trend chart's range picker) measure from the
   newest *data point*, not from `Date.now()`.
+- **jsPDF's built-in fonts can't render ₹.** Helvetica and Courier (the base14
+  fonts jsPDF ships without embedding anything extra) only cover WinAnsi's
+  Latin range, and ₹ (U+20B9) sits outside it, so it silently prints as a
+  missing-glyph box instead of erroring. The PDF export (`lib/pdf/`) formats
+  money as `"Rs. 12,34,567"` rather than reusing `formatInr()`, which uses
+  `Intl.NumberFormat`'s currency style and is exactly what prints the glyph.
+  A test asserts the rendered bytes never contain `₹`, so a future call site
+  that reaches for `formatInr` here by habit fails immediately.
 - **Moving the production domain breaks Google sign-in until Google is told.**
   `trustHost: true` in `src/auth.ts` means Auth.js computes the OAuth
   callback URL from whatever host the request actually arrives on, so no
