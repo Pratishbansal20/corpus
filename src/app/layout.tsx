@@ -25,6 +25,11 @@ const mono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
+  // Resolves the generated opengraph-image into an absolute URL: without
+  // this, Next falls back to localhost and every shared link's preview
+  // image would point at a URL that only resolves on the machine it was
+  // built on.
+  metadataBase: new URL("https://corpusfinance.vercel.app"),
   title: "Corpus: every account, one number",
   description:
     "A private finance hub: Indian stocks, mutual funds, US holdings, bank balances and cards resolved into a single net worth.",
