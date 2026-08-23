@@ -26,10 +26,10 @@ export function CountUp({
     ).matches;
     if (reduced) return;
 
-    setValue(0);
     let start: number | null = null;
 
     const timer = window.setTimeout(() => {
+      setValue(0);
       const tick = (now: number) => {
         if (start === null) start = now;
         const t = Math.min((now - start) / durationMs, 1);
