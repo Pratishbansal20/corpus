@@ -1,10 +1,12 @@
 import { PrismaClient } from "../../generated/prisma";
-import { Prisma } from "../../generated/prisma";
+import { Prisma, type Country } from "../../generated/prisma";
 import { PrismaPg } from "@prisma/adapter-pg";
 import pg from "pg";
 import dotenv from "dotenv";
 
-dotenv.config();
+// quiet: true suppresses dotenv's self-promotional console "tip" line (see
+// prisma.config.ts for the full explanation).
+dotenv.config({ quiet: true });
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -152,7 +154,7 @@ async function seed() {
         type: instType,
         symbol: s.symbol,
         name: s.name,
-        country: s.country as any,
+        country: s.country as Country,
         currency: s.currency
       }
     });

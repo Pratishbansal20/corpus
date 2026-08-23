@@ -41,6 +41,29 @@ function pnlClass(value: number): string {
 type SortField = "name" | "source" | "quantity" | "invested" | "value" | "pnl" | "weight";
 type SortOrder = "asc" | "desc";
 
+function SortHeader({
+  field,
+  activeField,
+  onSort,
+  children,
+}: {
+  field: SortField;
+  activeField: SortField;
+  onSort: (field: SortField) => void;
+  children: React.ReactNode;
+}) {
+  const isActive = activeField === field;
+  return (
+    <button
+      onClick={() => onSort(field)}
+      className="group inline-flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer"
+    >
+      {children}
+      <ArrowUpDown className={`size-3.5 opacity-60 group-hover:opacity-100 ${isActive ? "text-primary opacity-100" : ""}`} />
+    </button>
+  );
+}
+
 export function HoldingsTable({
   holdings: initialHoldings,
   banks = [],
@@ -53,8 +76,8 @@ export function HoldingsTable({
 
   const sortedHoldings = React.useMemo(() => {
     return [...initialHoldings].sort((a, b) => {
-      let valA: any = 0;
-      let valB: any = 0;
+      let valA: string | number = 0;
+      let valB: string | number = 0;
 
       switch (sortField) {
         case "name":
@@ -100,19 +123,6 @@ export function HoldingsTable({
       setSortField(field);
       setSortOrder("desc"); // Default to desc for numeric/value fields
     }
-  };
-
-  const SortHeader = ({ field, children }: { field: SortField; children: React.ReactNode }) => {
-    const isActive = sortField === field;
-    return (
-      <button
-        onClick={() => handleSort(field)}
-        className="group inline-flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer"
-      >
-        {children}
-        <ArrowUpDown className={`size-3.5 opacity-60 group-hover:opacity-100 ${isActive ? "text-primary opacity-100" : ""}`} />
-      </button>
-    );
   };
 
   return (
@@ -227,26 +237,26 @@ export function HoldingsTable({
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             <TableHead>
-              <SortHeader field="name">Instrument</SortHeader>
+              <SortHeader field="name" activeField={sortField} onSort={handleSort}>Instrument</SortHeader>
             </TableHead>
             <TableHead>
-              <SortHeader field="source">Source</SortHeader>
+              <SortHeader field="source" activeField={sortField} onSort={handleSort}>Source</SortHeader>
             </TableHead>
             <TableHead className="text-right">
-              <SortHeader field="quantity">Qty</SortHeader>
+              <SortHeader field="quantity" activeField={sortField} onSort={handleSort}>Qty</SortHeader>
             </TableHead>
             <TableHead className="text-right">Avg buy</TableHead>
             <TableHead className="text-right">
-              <SortHeader field="invested">Invested</SortHeader>
+              <SortHeader field="invested" activeField={sortField} onSort={handleSort}>Invested</SortHeader>
             </TableHead>
             <TableHead className="text-right">
-              <SortHeader field="value">Value</SortHeader>
+              <SortHeader field="value" activeField={sortField} onSort={handleSort}>Value</SortHeader>
             </TableHead>
             <TableHead className="text-right">
-              <SortHeader field="pnl">P/L</SortHeader>
+              <SortHeader field="pnl" activeField={sortField} onSort={handleSort}>P/L</SortHeader>
             </TableHead>
             <TableHead className="text-right">
-              <SortHeader field="weight">Weight</SortHeader>
+              <SortHeader field="weight" activeField={sortField} onSort={handleSort}>Weight</SortHeader>
             </TableHead>
             <TableHead className="w-[1%]" />
           </TableRow>

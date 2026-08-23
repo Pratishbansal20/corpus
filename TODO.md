@@ -1,6 +1,6 @@
 # Corpus: TODO
 
-_Last updated 2026-08-21. Ordered by what unblocks the most. `PLAN.md` holds the
+_Last updated 2026-08-22. Ordered by what unblocks the most. `PLAN.md` holds the
 history of what is already built and why._
 
 > **Working agreement:** nothing here gets executed without agreeing the approach
@@ -31,7 +31,6 @@ Cheap, and each one closes a hole that has already cost us something.
 
 | Item | Why |
 |---|---|
-| **CI on pull requests** | `tsc`, `vitest` and `next build` only ever run on my machine. Nothing stops a broken commit reaching `main` and deploying. |
 | **Reverse a SIP execution** | A bounced mandate means the app bought units reality did not. `SipExecution` records enough to undo it, but there is no way to. |
 | **Weekly and quarterly SIPs** | Only `MONTHLY` auto-applies. The others store no anchor date, so monthly dates would over-buy them. Falls out of the `Transaction` model. |
 
@@ -209,12 +208,14 @@ survives that layout variance without a bespoke parser per broker.
 
 ## 6. Housekeeping
 
-- **Pre-existing lint errors** (11, none from recent work): two `any` in `holdings-table`,
-  seven `react-hooks/static-components` in the same file, a `setState`-in-effect in the
-  animated counter, an `any` in `seed-portfolio`, an unused import in `cards/queries`.
 - **Error monitoring** (Sentry), and set the Vercel function region to `sin1` to sit next
   to Neon.
 - **Backup and encrypted export**; **TOTP** as a second factor on top of the passphrase.
+- **`next` → 16.3.x**, when there's time to verify it properly. Pinned to `16.2.12` (patched
+  against the 9 CVEs in 16.0-16.2.10) rather than the newer minor `next` itself bundles a
+  fixed `postcss`/`sharp` under, since a minor bump on this fork is worth its own
+  verification pass, not a drive-by. See [`PLAN.md`](PLAN.md) for the full reasoning and
+  what's already accepted as low-risk in the meantime.
 
 ---
 

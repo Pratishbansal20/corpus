@@ -35,6 +35,10 @@ and an encryption key for sensitive fields.
 ```bash
 npm test               # run the tests
 npx tsc --noEmit        # check types
+npm run lint             # lint
 npm run build            # build for production
 npx prisma db push        # apply schema changes
 ```
+
+CI (`.github/workflows/ci.yml`) runs the first four of these on every pull request and push
+to `main`.

@@ -1,6 +1,7 @@
 import { SectionHeading } from "@/components/layout/section-heading";
 import {
   LoadingEyebrow,
+  SkeletonBar,
   SkeletonCard,
   SkeletonCardHeader,
   SkeletonCompositionLine,
@@ -11,8 +12,8 @@ import {
 
 // Shown the instant a navigation to /dashboard starts, replaced by the real
 // page as soon as its data resolves. Traces the real page's layout exactly
-// (hero, stat rail, chart, allocation, the two list cards) so nothing shifts
-// on the swap.
+// (hero, stat rail, trends, allocation, the two list cards) so nothing
+// shifts on the swap.
 export default function OverviewLoading() {
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-10">
@@ -27,10 +28,17 @@ export default function OverviewLoading() {
       <SkeletonStatRail />
 
       <section className="flex flex-col gap-4">
-        <SectionHeading title="Net worth over time" />
-        <SkeletonCard>
-          <div className="skeleton h-40 w-full rounded-lg" />
-        </SkeletonCard>
+        <SectionHeading title="Trends" />
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <SkeletonCard>
+            <SkeletonBar className="h-4 w-20" />
+            <div className="skeleton h-56 w-full rounded-lg" />
+          </SkeletonCard>
+          <SkeletonCard>
+            <SkeletonCardHeader titleWidth="w-32" descriptionWidth="w-40" />
+            <div className="skeleton h-56 w-full rounded-lg" />
+          </SkeletonCard>
+        </div>
       </section>
 
       <section className="flex flex-col gap-4">

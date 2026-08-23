@@ -98,7 +98,7 @@ export default async function SettingsPage() {
         {!hasPp && (
           <CardContent>
             <p className="text-muted-foreground text-xs">
-              Once set, you'll need this passphrase every time you sign in,
+              Once set, you&apos;ll need this passphrase every time you sign in,
               on top of Google login. Minimum 6 characters.
             </p>
           </CardContent>

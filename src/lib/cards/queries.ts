@@ -1,8 +1,5 @@
 import { prisma } from "@/lib/db/prisma";
-import {
-  type CreditCardView,
-  CARD_NETWORK_LABELS,
-} from "./constants";
+import { type CreditCardView } from "./constants";
 
 export { type CreditCardView, CARD_NETWORK_LABELS } from "./constants";
 

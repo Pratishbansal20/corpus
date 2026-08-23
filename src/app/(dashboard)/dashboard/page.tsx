@@ -35,13 +35,16 @@ import {
 import { getSipPlans, monthlySipTotal } from "@/lib/sips/queries";
 import { consolidateBySource } from "@/lib/holdings/consolidation";
 import { computeNetWorth } from "@/lib/networth/compute";
-import { getNetWorthHistory } from "@/lib/networth/snapshot";
+import {
+  getNetWorthHistory,
+  getInvestmentReturnsHistory,
+} from "@/lib/networth/snapshot";
 import {
   allocationByAssetClass,
   allocationByCountry,
 } from "@/lib/portfolio/allocation";
 import { formatInr, formatPct, formatSignedInr } from "@/lib/money";
-import { NetWorthTrend } from "@/components/charts/net-worth-trend";
+import { PortfolioTrends } from "@/components/charts/portfolio-trends";
 import { AllocationDonut } from "@/components/charts/allocation-donut";
 import { CompositionLine } from "@/components/charts/composition-line";
 import { SectionHeading } from "@/components/layout/section-heading";
@@ -68,6 +71,7 @@ export default async function DashboardPage() {
     creditScore,
     sips,
     history,
+    returnsHistory,
     staleMfs,
     stalePrices,
   ] =
@@ -79,6 +83,7 @@ export default async function DashboardPage() {
       getLatestCreditScore(user.id),
       getSipPlans(user.id),
       getNetWorthHistory(user.id),
+      getInvestmentReturnsHistory(user.id),
       countStaleMutualFunds(user.id, 15),
       getStalePricedHoldings(user.id),
     ]);
@@ -250,28 +255,25 @@ export default async function DashboardPage() {
         <CreditStat score={creditScore} />
       </section>
 
-      <section className="flex flex-col gap-4">
-        <SectionHeading
-          title="Net worth over time"
-          hint={
-            history.length >= 2
-              ? "Recorded on each refresh"
-              : "Builds as you refresh"
-          }
+      {history.length >= 2 ? (
+        <PortfolioTrends
+          netWorthData={history}
+          returnsData={returnsHistory}
+          hasInvestments={hasInvestments}
         />
-        <Card>
-          <CardContent>
-            {history.length >= 2 ? (
-              <NetWorthTrend data={history} />
-            ) : (
+      ) : (
+        <section className="flex flex-col gap-4">
+          <SectionHeading title="Net worth over time" hint="Builds as you refresh" />
+          <Card>
+            <CardContent>
               <div className="border-border text-muted-foreground flex h-40 items-center justify-center rounded-lg border border-dashed px-6 text-center text-sm text-balance">
                 Two days of history draws the line. Refresh prices to record
                 today.
               </div>
-            )}
-          </CardContent>
-        </Card>
-      </section>
+            </CardContent>
+          </Card>
+        </section>
+      )}
 
       {hasInvestments && (
         <section className="flex flex-col gap-4">

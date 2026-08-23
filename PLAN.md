@@ -1,6 +1,6 @@
 # Personal Finance Hub: Plan & Status (v3)
 
-_Last updated 2026-08-21. This file is the changelog: what's built and the reasoning and bugs
+_Last updated 2026-08-22. This file is the changelog: what's built and the reasoning and bugs
 behind each change, in the order it happened. For the standing architecture and design
 decisions, see [`ARCHITECTURE.md`](ARCHITECTURE.md). For what's next, see [`TODO.md`](TODO.md)._
 _Mirrored from the Claude Code plan; kept in-repo so it's openable on GitHub / the Claude app._
@@ -404,6 +404,159 @@ computed styles. Screenshotting was unavailable in this session, and a session c
 couldn't be forged to check the authenticated shell directly (correctly refused as an
 auth-bypass action) — worth a look end to end in a real browser.
 
+### CI, lint cleanup, and a dependency security pass (2026-08-22)
+
+**CI**: `.github/workflows/ci.yml` runs `tsc --noEmit`, `eslint`, `vitest` and `next build`
+on every PR into `main` and every push to `main`. Nothing here needs a live database:
+every dashboard page is fully dynamic (server-rendered per request, never prerendered), so
+`next build` only needs env vars to be present and correctly shaped, not to point at
+anything real. Confirmed by building locally against nothing but placeholder values before
+committing to the workflow. The env block is throwaway junk, not secrets, and says so
+inline so a future edit doesn't mistake it for something that needs rotating.
+
+**The 12 pre-existing lint errors, gone.** `SortHeader` in `holdings-table.tsx` was defined
+inside the table's render body, so React remounted it from scratch on every sort click
+instead of updating it in place; harmless today only because it holds no state of its own.
+Moved to module scope, `sortField`/`onSort` passed in as props instead of closed over. The
+sort comparator's `any`-typed `valA`/`valB` became `string | number`, matching what the
+switch actually assigns. `CountUp`'s `setValue(0)` moved from directly in the effect body
+into the `setTimeout` callback that already gated the animation start: same visible timing
+(the timeout deferred a tick either way), no longer a synchronous state write from inside
+an effect. `seed-portfolio.ts`'s `as any` on `country` became `as Country`, the enum Prisma
+already generates. `cards/queries.ts` dropped an import of `CARD_NETWORK_LABELS` used only
+by a re-export two lines down, which doesn't need the import at all. One more turned up
+that wasn't in the original count of 11 (likely from the loading/logo pass the day before,
+never linted since): an un-escaped apostrophe in Settings' copy.
+
+**`.env.example` had a genuinely corrupted byte**, not a display artifact: all four
+em-dash comments had decoded to U+FFFD (confirmed with `cat -A`), presumably from an
+encoding step somewhere between writing and committing it. Replaced with plain hyphens.
+
+**Dependency audit: 18 vulnerabilities (3 critical, 12 high, 3 moderate) → 4 (all high),
+all four deliberately left as accepted, low-real-world-risk.** The three criticals sat
+directly in the auth stack, which is the one place "nobody but me" can't be casual about:
+
+- `next-auth` (`5.0.0-beta.31` → `.32`) and its `@auth/core` dependency (`0.41.2` → `0.41.3`,
+  also pulled in via `@auth/prisma-adapter` `2.11.2` → `2.11.3`) fixed a config-error path
+  that could leave `auth()` returning a populated session instead of failing closed — an
+  existence check failing *open* is the worst shape of auth bug to carry. Also fixed: an
+  email normalizer that ran before Unicode normalization (a homoglyph `@` bypass), an
+  uncaught exception on a malformed Bearer header, and OAuth state/nonce/PKCE cookies not
+  bound to the provider that set them.
+- `next` (`16.2.9` → `16.2.12`, staying on the 16.2.x line on purpose) fixed 9 CVEs present
+  from 16.0 through 16.2.10: middleware/proxy bypass, SSRF in Server Actions and in
+  rewrites, a Server Action DoS, cache confusion on request bodies, and unauthenticated
+  disclosure of internal Server Function endpoints.
+- `prisma` / `@prisma/client` / `@prisma/adapter-pg` bumped `7.8.0` → `7.9.1` (latest patch,
+  no CVE of its own here).
+
+The remaining 12 turned out to be entirely dev/build tooling that never reaches the
+deployed app: `prisma`'s own CLI config loader (`deepmerge-ts`, `fast-uri`, both nested
+under `@prisma/config`/`@prisma/dev`), `eslint`'s YAML parser, and — the one genuine
+surprise — `shadcn`'s CLI dragging in a full MCP SDK (`hono`, `ip-address`, `undici` via
+`@modelcontextprotocol/sdk`) despite the app never running an MCP server. Eight of these
+had a single, unconflicted resolution path and a same-major (or clean next-major, for
+`deepmerge-ts`) patched version available, so they're pinned via a new `overrides` block in
+`package.json`: `deepmerge-ts`, `fast-uri`, `js-yaml`, `nanoid`, `hono`,
+`@hono/node-server`, `ip-address`, `undici`. `postcss` got a *scoped* override
+(`@tailwindcss/postcss`, `shadcn`, `vite` individually, not a blanket one) specifically to
+leave `next`'s own internally-pinned `postcss@8.4.31` alone. Verified after: `prisma
+generate`/`prisma validate` both still run clean (exercises the new `deepmerge-ts` major
+inside `@prisma/config`), and the dev server's computed styles were checked live
+(`background-color`, font stack, `color-scheme: dark`) to confirm Tailwind's output survived
+the `postcss` bump for its three other consumers.
+
+**Four vulnerabilities left, deliberately.** `next` itself declares an *exact* pin on
+`postcss@8.4.31` and a caret range `sharp: '^0.34.5'` as its own internal implementation
+detail, both only fixed by moving to `next@16.3.2`, a minor version on a fork whose own
+`AGENTS.md` warns "breaking changes... may differ from your training data" — that bump
+deserves its own verification pass, not a drive-by inside a dependency-audit turn, so it's
+back in [`TODO.md`](TODO.md). `sharp`'s CVEs (inherited libvips bugs) need attacker-supplied
+image bytes reaching it to matter; the only image sharp ever touches here is the
+authenticated user's own Google avatar from a fixed `lh3.googleusercontent.com` pattern, not
+arbitrary uploads, so real exposure is close to zero either way. `postcss`'s CVEs need
+attacker-controlled CSS with a crafted `sourceMappingURL` comment; the only CSS this app
+ever runs through PostCSS is its own repository's, at build time, by the one developer who
+owns it, so this is the same shape of non-issue. `brace-expansion` resolves to two different
+incompatible majors at once (`1.1.15` under `eslint`'s `minimatch@3.x`, `5.0.6` under
+`typescript-eslint`/`ts-morph`'s `minimatch@10.x`); forcing one version to satisfy both risks
+breaking glob resolution in lint/build tooling to fix a DoS that requires an
+attacker-controlled brace pattern, which never happens here since every glob involved is a
+developer-authored config string, never user input.
+
+Also checked in passing and **not** a fix: `dotenv@17.4.2` prints a random promotional "tip"
+line on load (`⌁ auth for agents [www.vestauth.com]` among others). Read the source: it's a
+static array fed to a single `console.log`, nothing resembling a network call anywhere in
+the package, and the `vestauth.com` one is confirmed genuine self-promotion in the
+maintainer's own changelog, not a supply-chain compromise. Noise, not a vulnerability.
+
+### Investment returns chart (2026-08-22)
+
+The net-worth trend chart conflates two different things: money added and money earned.
+Noticed live: adding new investments produced a sudden jump that read like a windfall gain,
+because a lump-sum top-up or a new holding raises `PortfolioSnapshot.totalValueInr` and
+`investedInr` by roughly the same amount in the same instant (new units bought at today's
+price cost roughly what they're worth today), and the net-worth line has no way to tell
+"money went in" apart from "the market went up."
+
+**No schema change, no backfill.** `PortfolioSnapshot` already stored both `totalValueInr`
+and `investedInr` per user per day, so `getInvestmentReturnsHistory()`
+(`lib/networth/snapshot.ts`) just reads the same rows `getNetWorthHistory()` does and
+subtracts, in `Decimal` space (`totalValueInr.sub(investedInr)`, matching the exact pattern
+`lib/portfolio/valuation.ts` already uses for the same subtraction elsewhere). Since a
+top-up moves both sides roughly equally, this line does **not** show the jump the net-worth
+chart does; that's confirmed, not assumed.
+
+This is unrealized point-in-time P&L (current value minus cost basis), not a
+time-weighted or money-weighted return. It says nothing about *when* each rupee went in,
+only where things stand today versus cost; true XIRR needs cash-flow dates and stays
+correctly blocked on the `Transaction` model.
+
+**Follow-up, same day: two-tone coloring and a shared range control.** First cut colored
+the whole line by the sign of the latest point, one color for the entire window. Live
+feedback: a loss stretch should read as loss the whole way through, not just at the end.
+`zeroCrossingOffset()` (`returns-trend.tsx`) finds where zero falls in the visible values
+and feeds it to two hard-split gradient stops (`--gain` above, `--loss` below) shared by
+both the stroke and the fill, so the line is unambiguously red wherever it's actually
+negative — reduces to a solid single color automatically when a window never crosses zero,
+no separate branch needed for that case.
+
+Second piece of feedback: hovering one chart should highlight the same date on the other.
+recharts supports this natively (`syncId`, synced by array index by default), but only
+works correctly if both charts are showing the same window — two independently-driven range
+pickers could drift apart with nothing stopping them. Rather than add a "these don't
+match" fallback, removed the possibility: `PortfolioTrends`
+(`components/charts/portfolio-trends.tsx`) now owns one `range` state and one `Segmented`
+control for both charts, so "same timeline" is structurally guaranteed, not just usually
+true. `NetWorthTrendChart` and `ReturnsTrendChart` were cut down to pure presentational
+components (`points`/`domain`/`syncId` props, no state of their own); the range-picker and
+`sliceToRange`/`niceDomain` slicing logic that used to live in each one now lives once, in
+`PortfolioTrends`. Both `<AreaChart>`s pass the same `syncId`, which is all recharts needs
+for the hover sync. Third round of feedback: the two cards were laid out side by side on
+wide screens (mirroring the existing Allocation section's grid) — asked to stack them one
+after another instead, so the grid lost its `lg:grid-cols-2`.
+
+The section moved from two headings ("Net worth over time" / "Investment returns") to one
+("Trends") with two card titles inside, since there's now one range control governing both,
+not two. Still gated behind `hasInvestments` for the returns card specifically (net worth
+renders regardless — it means something even with zero investments); still has a matching
+`dashboard/loading.tsx` skeleton.
+
+Verified after every round: `tsc`, `eslint`, all 111 existing tests, and `next build` all
+clean; no new test file added, matching the precedent that DB-query mappers like
+`getNetWorthHistory()` aren't unit-tested here, only the pure logic modules are
+(`trend-range.ts`'s tests already cover `niceDomain`/`sliceToRange`, reused unchanged).
+Checked against the live app twice: seeded a temporary pre-unlocked `Session` row per the
+verification approach below, confirmed via the accessibility tree that the section renders
+with the real heading, real numbers, a correctly-computed "N days shown" caption shared by
+both charts, and (after the merge) exactly one "Trends time range" tablist rather than two —
+then deleted the row both times. Pixel-level rendering (the actual red/green split, the
+live hover sync) could not be confirmed in this session: the tab reported
+`document.hidden: true`, which collapses recharts' `ResponsiveContainer` to 0×0 for every
+chart on the page, not just these two, so it's an environment limitation rather than
+anything specific to this feature. Confirmed structurally sound both times; worth a direct
+look in a real browser for the part that actually matters here, the colors and the hover.
+
 ---
 
 ## Remaining backlog
@@ -415,7 +568,8 @@ this file used to carry). This file stays the changelog of what has already ship
 ---
 
 ## Verification approach
-- `npm test` + `tsc --noEmit` + `npm run build` green before deploy.
+- `npm test` + `tsc --noEmit` + `eslint .` + `npm run build` green before deploy; the same
+  four run in CI (`.github/workflows/ci.yml`) on every PR and push to `main`.
 - Authenticated pages cannot be screenshotted headlessly (the session cookie is httpOnly), so
   verify them by seeding a temporary pre-unlocked `Session` row and curling with that cookie,
   then deleting the row. For visuals, a temporary public page rendering the real components with
