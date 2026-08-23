@@ -334,6 +334,21 @@ an expected miss.
   `opengraph-image.tsx` was the case that surfaced this) can 404 against a
   stale route manifest until the cache is cleared. `rm -rf .next` and
   restart before trusting a "this isn't working" from dev.
+- **Satori (`next/og`'s `ImageResponse`, used by `apple-icon.tsx`,
+  `opengraph-image.tsx`, `icons/[size]/route.tsx`) doesn't render custom
+  components or fragments — only literal HTML/SVG elements written directly
+  in the JSX passed to `ImageResponse`.** A shared component like
+  `<MarkGlyph color={...} />` (composing `<path>`/`<circle>` elements, even
+  wrapped in a real `<g>` rather than a `<>` fragment) silently renders
+  nothing on these three routes while looking completely correct in a normal
+  browser DOM or a server component — no error, no warning, just a blank
+  image at the same byte size every time. `@/lib/mark` exports both: JSX
+  components (`MarkRing`, `MarkGlyph`, ...) for normal React rendering, and
+  the raw geometry as data (`MARK_RING_D`, `MARK_LINE_D`, `MARK_DOT`, ...)
+  for these three files to write inline themselves. One level of named
+  function component passed straight to `ImageResponse` (`CardMark`,
+  `EdgeToEdgeMark`) is fine — it's composing a *second* layer of custom
+  components/fragments inside that Satori won't resolve.
 - **A `loading.tsx` only wraps the page it's colocated with, not the layout
   above it.** `(dashboard)/layout.tsx` awaits `requireUnlocked()` (correct:
   it's the security gate) but must not await anything else, because nothing

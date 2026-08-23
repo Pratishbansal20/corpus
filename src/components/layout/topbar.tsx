@@ -31,7 +31,13 @@ export function Topbar({
   pathname: string;
 }) {
   return (
-    <header className="border-border bg-background/70 sticky top-0 z-10 flex h-16 items-center justify-between gap-3 border-b px-5 backdrop-blur-md md:px-8">
+    <header
+      className="border-border bg-background/70 sticky top-0 z-10 flex min-h-16 items-center justify-between gap-3 border-b px-5 backdrop-blur-md md:px-8"
+      // Standalone on a notched/Dynamic-Island phone puts this header right
+      // at the physical screen edge, under the status bar, unless padded
+      // clear of it. Same treatment as mobile-nav.tsx's bottom padding.
+      style={{ paddingTop: "env(safe-area-inset-top)" }}
+    >
       <div className="flex min-w-0 items-center gap-2.5">
         {/* The mark stands in for the sidebar on phones. */}
         <WordmarkGlyph className="size-[1.15rem] shrink-0 md:hidden" />

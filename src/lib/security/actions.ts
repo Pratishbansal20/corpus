@@ -2,10 +2,13 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/require-user";
 import type { FormActionState } from "@/lib/forms/action-state";
 import { hashPassphrase, verifyPassphrase } from "./passphrase";
+import { generateTotpEnrollment, totpQrSvg, verifyTotpCode } from "./totp";
+import { encrypt, decrypt } from "@/lib/crypto/encryption";
 import { z } from "zod";
 
 // ---------- helpers ----------
@@ -50,6 +53,31 @@ const changeSchema = z.object({
 const unlockSchema = z.object({
   passphrase: z.string().min(1, "Enter your passphrase"),
 });
+
+const totpConfirmSchema = z.object({
+  secret: z.string().min(1),
+  code: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/, "Enter the 6-digit code"),
+});
+
+const totpRecoverSchema = z
+  .object({
+    code: z
+      .string()
+      .trim()
+      .regex(/^\d{6}$/, "Enter the 6-digit code"),
+    passphrase: z
+      .string()
+      .min(6, "Passphrase must be at least 6 characters")
+      .max(128),
+    confirm: z.string(),
+  })
+  .refine((d) => d.passphrase === d.confirm, {
+    message: "Passphrases don't match",
+    path: ["confirm"],
+  });
 
 // ---------- actions ----------
 
@@ -194,6 +222,150 @@ export async function unlockSession(
   }
 
   // Set unlockedAt on the current session.
+  const token = await getSessionToken();
+  if (token) {
+    await prisma.session.updateMany({
+      where: { sessionToken: token },
+      data: { unlockedAt: new Date() },
+    });
+  }
+
+  redirect("/dashboard");
+}
+
+// ---------- TOTP recovery ----------
+//
+// Passphrase-recovery only: proves who you are another way when you've
+// forgotten the passphrase, and lets you set a new one in the same step.
+// Never a routine second gate — requireUnlocked() never checks this.
+
+/**
+ * Generates a fresh secret and its QR code for enrollment. Deliberately not
+ * persisted here: only confirmTotpSetup(), after it verifies a real code
+ * against this exact secret, writes anything to the database. A setup
+ * that's started and abandoned mid-dialog leaves no live, unconfirmed
+ * recovery method behind.
+ */
+export async function generateTotpSecret(): Promise<{
+  secretBase32: string;
+  qrSvg: string;
+}> {
+  const user = await requireUser();
+  const { secretBase32, otpauthUri } = generateTotpEnrollment(
+    user.email ?? "Corpus account",
+  );
+  const qrSvg = await totpQrSvg(otpauthUri);
+  return { secretBase32, qrSvg };
+}
+
+/**
+ * Confirms a TOTP enrollment: the secret came from generateTotpSecret() and
+ * round-trips through a hidden form field, the code is what the user's
+ * authenticator app produced from scanning it. Only encrypted and saved on
+ * a real match.
+ */
+export async function confirmTotpSetup(
+  _prev: FormActionState,
+  formData: FormData,
+): Promise<FormActionState> {
+  const user = await requireUser();
+
+  const security = await prisma.userSecurity.findUnique({
+    where: { userId: user.id! },
+  });
+  if (!security) {
+    return { status: "error", message: "Set an app passphrase first." };
+  }
+
+  const parsed = totpConfirmSchema.safeParse({
+    secret: formData.get("secret"),
+    code: formData.get("code"),
+  });
+  if (!parsed.success) {
+    return {
+      status: "error",
+      message: "Please fix the highlighted fields.",
+      fieldErrors: parsed.error.flatten().fieldErrors,
+    };
+  }
+
+  if (!verifyTotpCode(parsed.data.secret, parsed.data.code)) {
+    return {
+      status: "error",
+      message: "That code didn't match. Check the time on your phone and try again.",
+      fieldErrors: { code: ["Incorrect code"] },
+    };
+  }
+
+  await prisma.userSecurity.update({
+    where: { userId: user.id! },
+    data: {
+      totpSecretEnc: encrypt(parsed.data.secret),
+      totpEnabledAt: new Date(),
+    },
+  });
+
+  return { status: "success", message: "Recovery set up." };
+}
+
+/** Turns recovery back off. Called directly (see DeleteDialog's pattern), so it revalidates by hand. */
+export async function disableTotpRecovery(formData: FormData): Promise<void> {
+  void formData; // DeleteDialog always sends one; nothing here needs it.
+  const user = await requireUser();
+  await prisma.userSecurity.update({
+    where: { userId: user.id! },
+    data: { totpSecretEnc: null, totpEnabledAt: null },
+  });
+  revalidatePath("/settings");
+}
+
+/**
+ * The recovery path itself: called from /unlock's "forgot your passphrase?"
+ * link. Verifies a TOTP code instead of the passphrase, then sets a new
+ * passphrase and unlocks the session in the same step, since the whole
+ * point is the user doesn't have the old one to enter.
+ */
+export async function recoverWithTotp(
+  _prev: FormActionState,
+  formData: FormData,
+): Promise<FormActionState> {
+  const user = await requireUser();
+
+  const security = await prisma.userSecurity.findUnique({
+    where: { userId: user.id! },
+  });
+  if (!security?.totpSecretEnc) {
+    return { status: "error", message: "Recovery isn't set up for this account." };
+  }
+
+  const parsed = totpRecoverSchema.safeParse({
+    code: formData.get("code"),
+    passphrase: formData.get("passphrase"),
+    confirm: formData.get("confirm"),
+  });
+  if (!parsed.success) {
+    return {
+      status: "error",
+      message: "Please fix the highlighted fields.",
+      fieldErrors: parsed.error.flatten().fieldErrors,
+    };
+  }
+
+  const secret = decrypt(security.totpSecretEnc);
+  if (!verifyTotpCode(secret, parsed.data.code)) {
+    return {
+      status: "error",
+      message: "That code didn't match.",
+      fieldErrors: { code: ["Incorrect code"] },
+    };
+  }
+
+  const { hash, salt } = await hashPassphrase(parsed.data.passphrase);
+  await prisma.userSecurity.update({
+    where: { userId: user.id! },
+    data: { passphraseHash: hash, passphraseSalt: salt },
+  });
+
   const token = await getSessionToken();
   if (token) {
     await prisma.session.updateMany({

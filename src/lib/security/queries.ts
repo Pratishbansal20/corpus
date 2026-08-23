@@ -12,3 +12,16 @@ export async function hasPassphrase(userId: string): Promise<boolean> {
   });
   return row !== null;
 }
+
+/**
+ * Returns true if TOTP passphrase recovery is set up. Used to determine
+ * whether Settings shows "Set up recovery" vs "Turn off recovery", and
+ * whether /unlock offers the "forgot your passphrase?" path at all.
+ */
+export async function hasTotpRecovery(userId: string): Promise<boolean> {
+  const row = await prisma.userSecurity.findUnique({
+    where: { userId },
+    select: { totpEnabledAt: true },
+  });
+  return row?.totpEnabledAt != null;
+}

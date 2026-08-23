@@ -15,10 +15,13 @@ import {
   scoreBand,
 } from "@/lib/credit/queries";
 import { deleteCreditScore } from "@/lib/credit/actions";
-import { hasPassphrase } from "@/lib/security/queries";
+import { hasPassphrase, hasTotpRecovery } from "@/lib/security/queries";
+import { disableTotpRecovery } from "@/lib/security/actions";
 import { CreditScoreDialog } from "@/components/credit/credit-score-dialog";
 import { SetupPassphraseDialog } from "@/components/security/setup-passphrase-dialog";
 import { ChangePassphraseDialog } from "@/components/security/change-passphrase-dialog";
+import { SetupTotpDialog } from "@/components/security/setup-totp-dialog";
+import { BackupExportDialog } from "@/components/security/backup-export-dialog";
 import { DeleteDialog } from "@/components/forms/delete-dialog";
 
 const dateFmt = new Intl.DateTimeFormat("en-IN", {
@@ -35,9 +38,10 @@ function bandColor(band: ReturnType<typeof scoreBand>): string {
 
 export default async function SettingsPage() {
   const user = await requireUser();
-  const [scores, hasPp] = await Promise.all([
+  const [scores, hasPp, canRecover] = await Promise.all([
     getCreditScores(user.id!),
     hasPassphrase(user.id!),
+    hasTotpRecovery(user.id!),
   ]);
 
   return (
@@ -92,17 +96,36 @@ export default async function SettingsPage() {
                 </CardDescription>
               </div>
             </div>
-            {hasPp ? <ChangePassphraseDialog /> : <SetupPassphraseDialog />}
+            <div className="flex shrink-0 items-center gap-2">
+              {hasPp &&
+                (canRecover ? (
+                  <DeleteDialog
+                    id="totp"
+                    name="passphrase recovery"
+                    title="Turn off recovery"
+                    action={disableTotpRecovery}
+                  />
+                ) : (
+                  <SetupTotpDialog />
+                ))}
+              {hasPp ? <ChangePassphraseDialog /> : <SetupPassphraseDialog />}
+            </div>
           </div>
         </CardHeader>
-        {!hasPp && (
-          <CardContent>
+        <CardContent>
+          {!hasPp ? (
             <p className="text-muted-foreground text-xs">
               Once set, you&apos;ll need this passphrase every time you sign in,
               on top of Google login. Minimum 6 characters.
             </p>
-          </CardContent>
-        )}
+          ) : (
+            <p className="text-muted-foreground text-xs">
+              {canRecover
+                ? "Recovery is set up: an authenticator app can reset a forgotten passphrase."
+                : "No recovery set up yet. Set one up now, before you ever need it — this can't be done after you've already forgotten your passphrase."}
+            </p>
+          )}
+        </CardContent>
       </Card>
 
       {/* Export */}
@@ -133,6 +156,33 @@ export default async function SettingsPage() {
             Bank accounts and cards appear masked to the last 4 digits, the
             same as on screen. Full account numbers are never fetched to
             build this file.
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* Backup */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="bg-primary/10 text-primary flex size-10 items-center justify-center rounded-xl">
+                <FileDown className="size-5" />
+              </div>
+              <div>
+                <CardTitle className="text-base">Backup</CardTitle>
+                <CardDescription>
+                  A restorable snapshot, encrypted with a passphrase you set.
+                </CardDescription>
+              </div>
+            </div>
+            <BackupExportDialog />
+          </div>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground text-xs">
+            You choose the passphrase when you export, separate from your app
+            passphrase. Write it down somewhere safe: without it, this file
+            can&apos;t be opened again by anyone, including you.
           </p>
         </CardContent>
       </Card>

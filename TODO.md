@@ -1,6 +1,6 @@
 # Corpus: TODO
 
-_Last updated 2026-08-22. Ordered by what unblocks the most. `PLAN.md` holds the
+_Last updated 2026-08-23. Ordered by what unblocks the most. `PLAN.md` holds the
 history of what is already built and why._
 
 > **Working agreement:** nothing here gets executed without agreeing the approach
@@ -195,22 +195,22 @@ survives that layout variance without a bespoke parser per broker.
 
 ## 4. It reaches you
 
-- **PWA**: `manifest.webmanifest`, maskable icons, standalone display, light service worker
-  for the app shell, so Corpus installs to the home screen.
 - **Reminders**: card due dates and SIP debits over WhatsApp, SMS or email, driven by the
   existing daily cron. Needs a Twilio or SendGrid account.
 
 ## 5. Brand finish
 
-- **Landing hero animation**: replace the converging arcs with pie slices that fly in and
-  snap into a complete donut, then a brass impact ring and the net worth counting up.
-  Must render assembled and static under `prefers-reduced-motion`.
+- **Landing hero animation**: was written around the old five-arc ring mark (arcs flying in
+  and snapping into a complete donut); needs rethinking now that the mark is the monogram —
+  a C with the trend line drawn through it. Something like: the gather graphic's five
+  converging lines resolve into that same ascending line, which draws itself and lands on
+  the dot with a brass impact pulse, then the net worth counts up. Must render assembled and
+  static under `prefers-reduced-motion`.
 
 ## 6. Housekeeping
 
-- **Error monitoring** (Sentry), and set the Vercel function region to `sin1` to sit next
-  to Neon.
-- **Backup and encrypted export**; **TOTP** as a second factor on top of the passphrase.
+- **Error monitoring** (Sentry). Needs a Sentry account and a DSN before there's anything to
+  wire up; the SDK integration itself is a known shape, not a design decision.
 - **`next` → 16.3.x**, when there's time to verify it properly. Pinned to `16.2.12` (patched
   against the 9 CVEs in 16.0-16.2.10) rather than the newer minor `next` itself bundles a
   fixed `postcss`/`sharp` under, since a minor bump on this fork is worth its own

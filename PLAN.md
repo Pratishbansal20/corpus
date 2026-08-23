@@ -1,6 +1,6 @@
 # Personal Finance Hub: Plan & Status (v3)
 
-_Last updated 2026-08-22. This file is the changelog: what's built and the reasoning and bugs
+_Last updated 2026-08-23. This file is the changelog: what's built and the reasoning and bugs
 behind each change, in the order it happened. For the standing architecture and design
 decisions, see [`ARCHITECTURE.md`](ARCHITECTURE.md). For what's next, see [`TODO.md`](TODO.md)._
 _Mirrored from the Claude Code plan; kept in-repo so it's openable on GitHub / the Claude app._
@@ -557,13 +557,223 @@ chart on the page, not just these two, so it's an environment limitation rather 
 anything specific to this feature. Confirmed structurally sound both times; worth a direct
 look in a real browser for the part that actually matters here, the colors and the hover.
 
+### PWA, and the Vercel function region (2026-08-23)
+
+**Installable, same mark, no offline data.** `src/app/manifest.ts` (Next's auto-discovered,
+auto-linked manifest convention) plus `src/app/icons/[size]/route.tsx`, a single dynamic
+route generating the 192/512/maskable-512 PNGs Android's install prompt and app switcher
+need. Neither is a new design: `CardMark` in the icons route is `icon.svg`'s markup
+verbatim, just rasterized bigger; `EdgeToEdgeMark` is `apple-icon.tsx`'s composition (ink
+fills the canvas edge to edge, no corner radius of its own, since the OS applies its own
+mask shape) at the same 112:180 ring-to-canvas ratio, which leaves the ring well inside the
+~80% "safe zone" a maskable icon needs to survive a circular crop unclipped. Verified by
+fetching all three routes and reading the decoded PNGs back as images, not just checking
+the response status: the mark renders correctly at each size, rounded card for `any`, edge
+to edge for `maskable`.
+
+`start_url: "/dashboard"` skips the marketing landing page on every launch, since an
+installed PWA is opened by someone who already has an account; `requireUnlocked()` still
+sends them to `/login` on its own if the session's actually expired, so this isn't a new
+auth path, just a shorter one when it isn't needed. `appleWebApp` metadata added to
+`layout.tsx` since iOS never fully honors the manifest's `display: "standalone"` on its own
+and needs its own meta tags to drop the Safari chrome and match the status bar to the app's
+own dark background.
+
+**A service worker that caches nothing that matters.** `public/sw.js` intercepts exactly
+one thing: a page navigation that fails because there's no network, which it answers with a
+small branded `/offline` page instead of the browser's own error screen. Everything else
+(JS/CSS bundles, API calls, every dashboard page) passes straight through untouched. This
+was a deliberate ceiling, not a first step toward more: Corpus is fully dynamic (every
+dashboard page is a live DB read per request), so there is no meaningful "offline data" to
+serve in the first place, and this project has already been burned once by an
+over-aggressive cache (Turbopack silently serving a stale build, see Known Gotchas below) —
+a service worker that cached bundles or authenticated pages would be exactly that class of
+bug, at browser-cache scope, on a finance app. Registered only in production
+(`ServiceWorkerRegister`, `src/components/layout/service-worker-register.tsx`): a service
+worker registered under `next dev` outlives the dev server that registered it, since
+browsers keep it active across restarts, so registering nothing in dev means nothing to
+unregister by hand after every restart.
+
+**Two safe-area fixes for "smooth."** `mobile-nav.tsx` already padded itself with
+`env(safe-area-inset-bottom)` for the notch/home-indicator, written before this session —
+but the root layout's `viewport` export never set `viewportFit: "cover"`, so that padding
+was silently resolving to `0` the whole time: without `viewport-fit=cover`, the browser
+never extends layout into the safe-area region at all, so `env()` has nothing to report.
+Added `viewportFit: "cover"`, which is what actually turns that existing padding on.
+Applying it project-wide surfaced the matching gap at the top: `topbar.tsx`'s `sticky top-0`
+header had no equivalent inset, so a notched/Dynamic-Island phone in standalone mode would
+put the status bar directly over it. Same treatment added there, with `h-16` switched to
+`min-h-16` first — Tailwind's `box-sizing: border-box` means a fixed `h-16` plus new padding
+would have squeezed the header's own content into a shorter box instead of growing the
+header, not extended it.
+
+**Vercel function region.** `vercel.json` gained `"regions": ["sin1"]`. Checked, not
+assumed: Neon's connection string resolves to `ap-southeast-1`, and `sin1` (Singapore) is
+Vercel's matching region, so every function (every dashboard SSR request, the daily cron)
+now runs physically next to the database it talks to on every single request, instead of
+wherever Vercel's default happened to place it.
+
+### Bug fix (2026-08-23): unlock never expired
+
+Asked why the passphrase hadn't prompted in weeks. Checked the live data: `UserSecurity`
+exists (set up 2026-06-28), and every one of the last 5 sessions already had `unlockedAt`
+set. The gate wasn't broken — `unlockedAt` is only ever *set* (`lib/security/actions.ts`,
+on initial setup and on `/unlock`), never cleared anywhere in the codebase, so once a
+browser unlocks once, it stays unlocked for the life of that session cookie: Auth.js's
+default `maxAge` (30 days, rolling forward on activity), which in practice is closer to
+indefinite for a device in daily use. That quietly contradicts PLAN.md's own stated model
+("a separate passphrase opens the session, so a borrowed phone is never a borrowed
+portfolio"): any device unlocked at any point in that window got straight past the gate,
+no matter how long ago.
+
+`lib/security/unlock.ts` adds `UNLOCK_TTL_MS` (7 days, picked over 12h/30min/30-day
+options) and `isUnlockExpired()`, a pure function so the boundary is unit-tested
+(`unlock.test.ts`) without touching a database. `requireUnlocked()` now redirects to
+`/unlock` when `unlockedAt` is either unset *or* older than the TTL — one extra condition
+on an already-computed timestamp, no new query. Ordinary daily use never re-prompts; a
+device untouched for a week does.
+
+### New mark: the five-arc ring retired for a monogram (2026-08-23)
+
+Explored logo directions on request (a multi-artboard design canvas plus a Figma file, both
+outside the repo) and picked one: a flat-cut C, gap on the right like the plain letter, with
+the trend line that's driving the number — a real one, rising, dipping, rising again, not a
+ruler-straight arrow standing in for it — drawn through the gap and ending in a solid dot.
+The old mark (five dashed arcs closing into a ring, one of them brass) is gone — this isn't a
+variant of it, the ring-completing-into-a-donut idea is retired outright. Weight settled
+after a few rounds of checking against real sizes (16px is the actual browser-tab favicon,
+18 the topbar-mobile/loading-indicator size) *and* against the source design side by side —
+those are two different checks, and the first pass here only did the first one, which is how
+a too-thin line, then an accidentally-straightened line, then an overcorrected too-thick line
+each shipped before landing on the final weight: ring stroke 3.4, line 1.5, dot r=1.
+
+**Geometry now lives in one place, `src/lib/mark.ts[x]`**, not copied by hand across every
+call site. `WordmarkGlyph` (`components/layout/wordmark.tsx`) and `LoadingMark` are the two
+live React components (sidebar, topbar-mobile, `/login`, `/unlock`, the landing page, every
+loading state) and read `@/lib/mark`'s `MarkRing`/`MarkLineAndDot` components directly;
+`offline/page.tsx` does too. `apple-icon.tsx`, `opengraph-image.tsx` and
+`icons/[size]/route.tsx` (both `CardMark` and `EdgeToEdgeMark`, so the PWA install icons match
+too) render through `next/og`'s `ImageResponse`, which turned out not to render those
+components at all — see [Known gotchas](ARCHITECTURE.md#known-gotchas) — so those three import
+the same module's raw geometry constants instead and write the elements inline; one set of
+numbers either way. `icon.svg` is the one file that's still hand-copied, unavoidably: Next's
+favicon convention needs a literal static file, which can't import TypeScript.
+
+### TOTP passphrase recovery, and an encrypted backup export (2026-08-23)
+
+Two of the housekeeping items scoped earlier the same day, narrowed by explicit direction
+before either was built: TOTP **only** for recovering a forgotten passphrase, never a
+routine second gate on top of an already-unlocked session; backup encrypted with a
+passphrase typed at export time, not the fixed `ENCRYPTION_KEY` every other field uses.
+
+**TOTP recovery.** `UserSecurity` gained `totpSecretEnc`/`totpEnabledAt`
+(`prisma db push`, then `prisma generate` — and then tripped the exact gotcha
+`ARCHITECTURE.md` already documented: the long-running dev server had the *old* Prisma
+client in memory, so `hasTotpRecovery()`'s `totpEnabledAt` select failed with "Unknown
+field" until the dev server itself restarted, `prisma generate` alone wasn't enough).
+`lib/security/totp.ts` wraps `otpauth` (secret generation, `otpauth://` URI, code
+verification) and `qrcode` (SVG, rendered server-side, safe to inject via
+`dangerouslySetInnerHTML` since the input is a URI this app built itself, never
+user-supplied). Setup (`SetupTotpDialog`) is stateless on the server until confirmed: the
+secret is generated and returned to the client for the QR code, but only written to the
+database, AES-256-GCM encrypted the same way bank account numbers are, once a real code
+from the authenticator app proves it was actually scanned — a setup abandoned mid-dialog
+leaves no live, unconfirmed recovery method behind. Recovery itself
+(`recoverWithTotp`, reachable from `/unlock` via "forgot your passphrase?", shown only when
+recovery is set up) verifies a code against the stored secret and sets a brand new
+passphrase in the same step, since the whole point is the old one is gone.
+
+**Backup export.** `lib/backup/crypto.ts` derives an AES-256 key from the typed passphrase
+via scrypt (same parameters as `lib/security/passphrase.ts`) with a random salt stored
+alongside the ciphertext, so the file is self-describing and needs nothing but the
+passphrase to open again — and deliberately shares no key material with `ENCRYPTION_KEY`,
+so leaking a live backup file can never expose anything encrypted inside the running app,
+or the other way round. `lib/backup/gather.ts` reuses `buildExportReportData()` (the PDF
+export's own data gathering) wholesale rather than re-querying the same tables a second,
+slightly-different way, adding only SIPs and credit scores, the two things a "restore my
+data" snapshot wants that the PDF report doesn't already carry. Same masking contract as
+the PDF export, and for the same reason: no full bank account number or IFSC is in the
+payload, because nothing here ever decrypts or fetches one. `POST /api/export/backup`, not
+`GET`: the passphrase has to travel in the body, never a URL. The download itself isn't a
+server action (those return JSON, not a file) — `BackupExportDialog` does a real `fetch`
+and turns the response into a browser download the way a plain `<a download>` would, since
+a POST can't be one of those.
+
+Verified past what the 9 new unit tests (`totp.test.ts`, `unlock.test.ts` predates this
+entry, `crypto.test.ts` for backup) cover: a script exercised the *actual* encrypt → DB
+write → read back → decrypt → verify-real-code / reject-wrong-code cycle against the live
+`UserSecurity` row (reverted to its original `null` state after), and a second script hit
+the live `/api/export/backup` route end-to-end — real 42 holdings and 4 SIPs came back,
+decrypted correctly with the right passphrase, correctly refused the wrong one. Settings
+was checked structurally (both new cards render, correct copy, correct buttons) via the
+same seeded-session method noted below; interactively clicking through the dialogs was not
+possible in this session (`document.hidden: true` again, the same limitation noted for the
+portfolio-trends work above — not specific to this feature).
+
 ---
+
+### Settings: recovery merged into the App passphrase card (2026-08-24)
+
+Shipped the day before as its own separate "Passphrase recovery" card. Asked why it was a
+distinct card instead of appearing alongside "Change passphrase" — fair question, since
+both buttons act on the same passphrase and having two cards for it was more visual weight
+than the feature earns. Merged: "Set up recovery" / "Turn off recovery" now sits next to
+"Change passphrase" in the App passphrase card's header, and the card's one line of body
+copy states recovery's status alongside the passphrase's. No behavior change, no new
+queries — `canRecover` was already being read on this page.
+
+Worth being explicit about the one thing that *didn't* change and can't: recovery still has
+to be **set up in advance**, while signed in and the passphrase is still known. There's no
+version of this where "forgot password" itself triggers setup — by the time a passphrase is
+actually forgotten, there is nothing left to prove enrollment is legitimate. The existing
+"forgot your passphrase?" link on `/unlock` is the only place recovery is *used*, and always
+was; this change only touched where it's *set up*.
 
 ## Remaining backlog
 
 Moved to [`TODO.md`](TODO.md), which is now the single ordered backlog (it separates
 correctness/safety work from features from brand polish, rather than the phase numbering
 this file used to carry). This file stays the changelog of what has already shipped.
+
+---
+
+### Bug fix (2026-08-24): AMFI changed its own file format, silenced every mutual fund at once
+
+The "Refresh" button had started reporting "7 skipped (no quote found)" — always exactly 7,
+always mutual funds. Traced it to `parseAmfiNavFile()`, not to anything in this app changing:
+AMFI's `NAVAll.txt` used to carry one combined "Scheme Name" column (e.g. "... Fund Direct
+Plan Growth" as one string); sometime between 2026-08-18 (the last date every fund had a
+real price) and today, AMFI split that into three separate columns — Name, Plan, Option —
+which shifted the NAV and Date columns two places to the right. The parser's hardcoded
+indices didn't move with them: it read the new `Plan` column ("Direct Plan") as the NAV
+figure, `Number("Direct Plan")` is `NaN`, the numeric-and-positive check silently dropped
+the row, and this happened for every single row in the file, not just ours — a 14,000-row
+file parsed to zero, `fetchAmfiNavMap()` threw "file parsed empty," and every mutual fund
+in the portfolio was left exactly where it stood on the 18th while every stock kept pricing
+normally, since Yahoo's format hadn't changed.
+
+Fixed by reading the file's actual current shape (`Scheme Code;ISIN.../ISIN Growth;ISIN Div
+Reinvestment;Scheme Name;Plan;Option;Net Asset Value;Date`, 8 columns) instead of the old
+assumed 6. Name-fallback matching (used only when an instrument has no pinned `externalId`,
+which is every fund actually held here, but not guaranteed for a future one) now rejoins
+`Name + Plan + Option`, since a stored instrument name like "... Fund Direct Growth" would
+otherwise stop matching against AMFI's now-shorter base name. Added a test that pins the
+*current* 8-column layout as the expected shape, one that asserts the *old* 6-column layout
+now correctly parses to zero rather than silently resurrecting this exact bug if AMFI's
+column count ever changes again in the other direction, and one for the Name/Plan/Option
+rejoin.
+
+Verified against the live file, not just the fixture: fetched the real `NAVAll.txt` (14,041
+schemes) and confirmed all 7 previously-stuck funds resolve by scheme code with real NAVs
+dated 2026-08-21 (the last trading day before the weekend, consistent with every stock's own
+latest price). Applied it for real — wrote the corrected NAVs to the live `Price` table for
+all 7 funds, not just left the fix sitting in code until the next scheduled refresh.
+
+This is the same failure *shape* as the 2026-07-31 AMFI outage (`ARCHITECTURE.md`'s
+"Graceful degradation" section): an upstream provider changing its data unannounced, caught
+by the fact that the whole type went silent at once rather than one symbol. `findStalePrices()`
+would have flagged this as `SOURCE_DOWN` on the next dashboard load if it hadn't been caught
+first — worth remembering that nudge exists for exactly this failure mode.
 
 ---
 

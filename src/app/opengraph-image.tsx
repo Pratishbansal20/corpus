@@ -1,4 +1,12 @@
 import { ImageResponse } from "next/og";
+import {
+  MARK_BRASS,
+  MARK_LINE_D,
+  MARK_LINE_STROKE_WIDTH,
+  MARK_DOT,
+  MARK_RING_D,
+  MARK_RING_STROKE_WIDTH,
+} from "@/lib/mark";
 
 export const alt =
   "Corpus: every account, one number. A private finance hub for stocks, mutual funds, bank accounts, credit cards and net worth.";
@@ -25,27 +33,24 @@ export default function OpengraphImage() {
           background: "#100e0c",
         }}
       >
-        {/* Same ring-of-arcs mark as the app icon and sidebar wordmark. */}
-        <svg width="88" height="88" viewBox="0 0 32 32" fill="none">
-          <g transform="rotate(-90 16 16)">
-            <circle
-              cx="16"
-              cy="16"
-              r="9.5"
-              stroke="#d1a95e"
-              strokeOpacity="0.32"
-              strokeWidth="2.6"
-              strokeDasharray="7.13 4.81"
-            />
-            <circle
-              cx="16"
-              cy="16"
-              r="9.5"
-              stroke="#d1a95e"
-              strokeWidth="4"
-              strokeDasharray="7.13 52.57"
-            />
-          </g>
+        {/* Same mark as the app icon and sidebar wordmark, numbers from
+            @/lib/mark — written inline since Satori doesn't render that
+            module's components (see the comment there). */}
+        <svg width="88" height="88" viewBox="0 0 24 24" fill="none">
+          <path
+            d={MARK_RING_D}
+            stroke={MARK_BRASS}
+            strokeWidth={MARK_RING_STROKE_WIDTH}
+            strokeLinecap="butt"
+          />
+          <path
+            d={MARK_LINE_D}
+            stroke={MARK_BRASS}
+            strokeWidth={MARK_LINE_STROKE_WIDTH}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <circle cx={MARK_DOT.cx} cy={MARK_DOT.cy} r={MARK_DOT.r} fill={MARK_BRASS} />
         </svg>
 
         <div
@@ -85,7 +90,7 @@ export default function OpengraphImage() {
           }}
         >
           {[
-            { w: 38, c: "#d1a95e" },
+            { w: 38, c: MARK_BRASS },
             { w: 22, c: "#6fa3a3" },
             { w: 16, c: "#9dbb93" },
             { w: 14, c: "#a387b8" },
