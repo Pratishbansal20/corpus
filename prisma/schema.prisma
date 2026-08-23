@@ -387,6 +387,13 @@ model UserSecurity {
   userId         String   @unique
   passphraseHash String
   passphraseSalt String
+  // TOTP is passphrase-recovery only, never a routine second gate on top of
+  // an already-unlocked session: it lets someone who's forgotten the
+  // passphrase prove who they are another way and set a new one. Encrypted
+  // at rest with the same AES-256-GCM field encryption bank account numbers
+  // use (lib/crypto/encryption.ts), never stored plaintext.
+  totpSecretEnc  String?
+  totpEnabledAt  DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

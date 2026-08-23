@@ -21,7 +21,22 @@ function normalizeName(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-/** Parse AMFI's semicolon-delimited NAVAll file into a lookup map. */
+/**
+ * Parse AMFI's semicolon-delimited NAVAll file into a lookup map.
+ *
+ * Column layout as of 2026-08: `Scheme Code;ISIN Div Payout/ISIN Growth;
+ * ISIN Div Reinvestment;Scheme Name;Plan;Option;Net Asset Value;Date` (8
+ * columns). AMFI split what used to be one "Scheme Name" column (embedding
+ * "Direct Plan"/"Growth" etc. in the name itself) into separate Name/Plan/
+ * Option columns sometime between 2026-08-18 and 2026-08-23, which silently
+ * broke every mutual fund at once: the old 6-column indices read "Direct
+ * Plan" as the NAV string, failed the numeric check, and the file parsed to
+ * zero rows for every single scheme, not just ours. Name matching
+ * (matchInstrument's fallback path) rejoins Name+Plan+Option so a stored
+ * instrument name like "... Fund Direct Growth" still matches against the
+ * now-split columns; scheme-code matching (the primary path, used by every
+ * pinned holding) was never affected by this beyond the column shift itself.
+ */
 export function parseAmfiNavFile(text: string): Map<string, AmfiRow> {
   const byCode = new Map<string, AmfiRow>();
   const lines = text.split(/\r?\n/);
@@ -29,13 +44,17 @@ export function parseAmfiNavFile(text: string): Map<string, AmfiRow> {
   for (const line of lines) {
     if (!line.trim() || line.startsWith("Scheme Code")) continue;
     const parts = line.split(";");
-    if (parts.length < 6) continue;
+    if (parts.length < 8) continue;
 
     const schemeCode = parts[0]?.trim();
-    const name = parts[3]?.trim();
-    const navStr = parts[4]?.trim();
-    const dateStr = parts[5]?.trim();
-    if (!schemeCode || !name || !navStr || !dateStr) continue;
+    const schemeName = parts[3]?.trim();
+    const plan = parts[4]?.trim();
+    const option = parts[5]?.trim();
+    const navStr = parts[6]?.trim();
+    const dateStr = parts[7]?.trim();
+    if (!schemeCode || !schemeName || !navStr || !dateStr) continue;
+
+    const name = [schemeName, plan, option].filter(Boolean).join(" ");
 
     const nav = Number(navStr);
     if (!Number.isFinite(nav) || nav <= 0) continue;

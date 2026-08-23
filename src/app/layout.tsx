@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Bricolage_Grotesque, Instrument_Sans, IBM_Plex_Mono } from "next/font/google";
+import { ServiceWorkerRegister } from "@/components/layout/service-worker-register";
 import "./globals.css";
 
 // Display: headlines and headline money. Optical sizing tightens it as it grows.
@@ -33,11 +34,27 @@ export const metadata: Metadata = {
   title: "Corpus: every account, one number",
   description:
     "A private finance hub: Indian stocks, mutual funds, US holdings, bank balances and cards resolved into a single net worth.",
+  // iOS never fully honors the web manifest's display: "standalone"; it
+  // needs its own meta tags to drop the Safari chrome when launched from
+  // the home screen and to match the status bar to the app's own dark
+  // background instead of the default light one.
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Corpus",
+  },
 };
 
 export const viewport: Viewport = {
   themeColor: "#100e0c",
   colorScheme: "dark",
+  // Lets the app draw under the notch/home-indicator instead of stopping
+  // short of it. mobile-nav.tsx already pads itself with
+  // env(safe-area-inset-bottom) for exactly this, but that padding is a
+  // no-op without this: without viewport-fit=cover, the browser never
+  // extends layout into the safe-area region in the first place, so
+  // env() falls back to 0 either way.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -54,6 +71,7 @@ export default function RootLayout({
     >
       <body className="bg-background text-foreground min-h-full">
         {children}
+        <ServiceWorkerRegister />
       </body>
     </html>
   );

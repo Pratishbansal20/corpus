@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
+import { isUnlockExpired } from "@/lib/security/unlock";
 
 // Returns the signed-in user, redirecting to /login if there's no session.
 // Use this in server components and server actions before any per-user query so
@@ -50,7 +51,9 @@ const SESSION_COOKIE_DEV = "authjs.session-token";
  * security gate that sits in front of every single dashboard page. The
  * *decision* logic afterward is untouched, checked in the exact same order
  * as before: no passphrase set → let through; no cookie → /login; no
- * `unlockedAt` → /unlock. The only behavioural difference is that the
+ * `unlockedAt`, or an `unlockedAt` older than `UNLOCK_TTL_MS`
+ * (`lib/security/unlock.ts`) → /unlock. The only behavioural difference is
+ * that the
  * session lookup now also runs on the one-time first-run path (no
  * passphrase yet), where its result is simply discarded — a harmless read,
  * scoped to the caller's own cookie, in exchange for saving a round trip on
@@ -81,9 +84,10 @@ export async function requireUnlocked() {
   // above still ran, but nothing here reads its result in that case.
   if (!security) return user;
 
-  // Passphrase exists: the session must carry a cookie and be unlocked.
+  // Passphrase exists: the session must carry a cookie, be unlocked, and
+  // that unlock must not have expired (see lib/security/unlock.ts).
   if (!sessionToken) redirect("/login");
-  if (!dbSession?.unlockedAt) {
+  if (!dbSession?.unlockedAt || isUnlockExpired(dbSession.unlockedAt)) {
     redirect("/unlock");
   }
 

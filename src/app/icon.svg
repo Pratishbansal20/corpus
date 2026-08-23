@@ -1,7 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
-  <rect width="32" height="32" rx="7" fill="#14120f"/>
-  <g transform="rotate(-90 16 16)" fill="none" stroke-linecap="round">
-    <circle cx="16" cy="16" r="9.5" stroke="#d1a95e" stroke-opacity="0.32" stroke-width="2.6" stroke-dasharray="7.13 4.81"/>
-    <circle cx="16" cy="16" r="9.5" stroke="#d1a95e" stroke-width="4" stroke-dasharray="7.13 52.57"/>
-  </g>
+<!-- The browser-tab favicon. Next's convention needs a literal static SVG
+     file here, which can't import TypeScript, so this is the one place that
+     can't read src/lib/mark.tsx directly — keep this in sync with it by
+     hand if the mark ever changes. Same geometry, viewBox and card radius,
+     just written as raw markup instead of components. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <rect width="24" height="24" rx="5" fill="#14120f"/>
+  <path d="M18.784 16.239 A8 8 0 1 1 18.784 7.761" fill="none" stroke="#d1a95e" stroke-width="3.4" stroke-linecap="butt"/>
+  <path d="M8.36 16.48 L12.84 13.82 L16.2 14.94 L21.52 9.62" fill="none" stroke="#d1a95e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="21.52" cy="9.62" r="1" fill="#d1a95e"/>
 </svg>

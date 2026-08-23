@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { Lock } from "lucide-react";
 import { auth } from "@/auth";
-import { hasPassphrase } from "@/lib/security/queries";
+import { hasPassphrase, hasTotpRecovery } from "@/lib/security/queries";
 import { Wordmark } from "@/components/layout/wordmark";
 import { UnlockForm } from "./unlock-form";
 
@@ -15,6 +15,8 @@ export default async function UnlockPage() {
   // If the user hasn't set a passphrase yet, skip straight to dashboard.
   const hasPp = await hasPassphrase(session.user.id!);
   if (!hasPp) redirect("/dashboard");
+
+  const canRecover = await hasTotpRecovery(session.user.id!);
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -43,7 +45,7 @@ export default async function UnlockPage() {
             className="rise mt-8"
             style={{ "--delay": "180ms" } as React.CSSProperties}
           >
-            <UnlockForm />
+            <UnlockForm canRecover={canRecover} />
           </div>
         </div>
       </main>
