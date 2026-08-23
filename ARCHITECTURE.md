@@ -311,11 +311,12 @@ an expected miss.
 
 ## Testing and verification
 
-- `npm test` (vitest), `tsc --noEmit`, `npm run build`: all three green
-  before anything is considered done. 111 tests as of this writing, entirely
-  unit-level: date/calendar math, Decimal arithmetic, provider parsing,
-  schema validation, PDF-byte assertions for the export. No end-to-end test
-  suite.
+- `npm test` (vitest), `tsc --noEmit`, `eslint`, `npm run build`: all four green
+  before anything is considered done, and all four run in CI
+  (`.github/workflows/ci.yml`) on every PR and push to `main`. 111 tests as of
+  this writing, entirely unit-level: date/calendar math, Decimal arithmetic,
+  provider parsing, schema validation, PDF-byte assertions for the export. No
+  end-to-end test suite.
 - Authenticated pages can't be screenshotted headlessly (the session cookie
   is `httpOnly`), so verification against the live app seeds a temporary
   pre-unlocked `Session` row, drives the real UI or curls the route with that
@@ -389,6 +390,25 @@ an expected miss.
   matching `.vercel.app` subdomain if that subdomain is already taken by an
   unrelated Vercel user elsewhere; the domain has to be added separately
   under Settings → Domains and marked Production.
+
+- **`package.json`'s `overrides` block pins specific transitive dependencies**
+  (`deepmerge-ts`, `fast-uri`, `js-yaml`, `nanoid`, `hono`, `@hono/node-server`,
+  `ip-address`, `undici`, plus a scoped `postcss` override for
+  `@tailwindcss/postcss`/`shadcn`/`vite` only) to patched versions that a
+  `^`-range install wouldn't reach on its own, closing out an `npm audit` pass.
+  All of them sit in dev/build tooling (`prisma`'s CLI config loader, `eslint`,
+  `shadcn`'s bundled MCP SDK), never in the deployed app, and each override was
+  chosen to be the single patched version every resolver in the tree can
+  actually agree on. `postcss` is deliberately *not* overridden as a blanket
+  entry: `next` pins its own internal copy exactly (`8.4.31`) as an
+  implementation detail, and a blanket override would silently replace it too.
+  Deliberately **not** overridden at all: `sharp` (native binary; `next`
+  declares an exact compatible range, and its CVEs need attacker-supplied
+  image bytes this app never routes to it) and `brace-expansion` (resolves to
+  two incompatible majors at once across `eslint` vs. `typescript-eslint`'s
+  `minimatch`, and its DoS needs an attacker-controlled glob pattern, never
+  user input here). See [`PLAN.md`](PLAN.md#ci-lint-cleanup-and-a-dependency-security-pass-2026-08-22)
+  for the full audit-vulnerability-by-vulnerability reasoning.
 
 ## Deployment
 
