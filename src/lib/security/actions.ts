@@ -25,6 +25,47 @@ async function getSessionToken(): Promise<string | undefined> {
   );
 }
 
+// Every route the (dashboard) layout gates. Listed explicitly because the
+// group's shared layout has no URL prefix of its own to revalidate in one
+// call (it's a route *group*, `(dashboard)`, not a URL segment).
+const DASHBOARD_ROUTES = [
+  "/dashboard",
+  "/holdings",
+  "/funds",
+  "/accounts",
+  "/cards",
+  "/settings",
+];
+
+/**
+ * Marks the current session unlocked and sends the browser to /dashboard.
+ *
+ * The revalidatePath calls are load-bearing, not cleanup: next.config.ts
+ * sets `staleTimes.dynamic: 30`, so a page visited *while still locked*
+ * (redirected straight to /unlock by requireUnlocked()) stays cached
+ * client-side as "redirects to /unlock" for up to 30 seconds. Without
+ * busting that cache here, redirect("/dashboard") below can land back on
+ * that exact stale cached response and bounce straight back to /unlock —
+ * looking exactly like the passphrase was never accepted, even though the
+ * database was updated correctly, since a typed URL (a hard navigation)
+ * always bypasses this cache and a soft one does not. Every other
+ * mutation in this app already calls revalidatePath() for the same reason;
+ * this one just hadn't needed it until the client router cache existed.
+ */
+async function unlockCurrentSessionAndRedirect(): Promise<never> {
+  const token = await getSessionToken();
+  if (token) {
+    await prisma.session.updateMany({
+      where: { sessionToken: token },
+      data: { unlockedAt: new Date() },
+    });
+  }
+
+  for (const route of DASHBOARD_ROUTES) revalidatePath(route);
+
+  redirect("/dashboard");
+}
+
 // ---------- schemas ----------
 
 const setupSchema = z.object({
@@ -221,16 +262,7 @@ export async function unlockSession(
     return { status: "error", message: "Wrong passphrase. Try again." };
   }
 
-  // Set unlockedAt on the current session.
-  const token = await getSessionToken();
-  if (token) {
-    await prisma.session.updateMany({
-      where: { sessionToken: token },
-      data: { unlockedAt: new Date() },
-    });
-  }
-
-  redirect("/dashboard");
+  return unlockCurrentSessionAndRedirect();
 }
 
 // ---------- TOTP recovery ----------
@@ -366,13 +398,5 @@ export async function recoverWithTotp(
     data: { passphraseHash: hash, passphraseSalt: salt },
   });
 
-  const token = await getSessionToken();
-  if (token) {
-    await prisma.session.updateMany({
-      where: { sessionToken: token },
-      data: { unlockedAt: new Date() },
-    });
-  }
-
-  redirect("/dashboard");
+  return unlockCurrentSessionAndRedirect();
 }
