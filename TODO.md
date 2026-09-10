@@ -1,6 +1,6 @@
 # Corpus: TODO
 
-_Last updated 2026-08-23. Ordered by what unblocks the most. `PLAN.md` holds the
+_Last updated 2026-09-11. Ordered by what unblocks the most. `PLAN.md` holds the
 history of what is already built and why._
 
 > **Working agreement:** nothing here gets executed without agreeing the approach
@@ -23,16 +23,28 @@ typed in. Four separate things are stuck behind this:
 with `Holding.quantity` and `avgBuyPrice` derived from it rather than stored by hand.
 Do not start XIRR before this lands.
 
+**Checked against a real CAS, not just assumed: the shape holds.** A real CAMS+KFintech
+Detailed CAS (7 pages, 7 AMCs, 17 folios) is staged at `data/cas-raw/` (gitignored — real
+PAN/address/mobile in it, never committed) for whenever this gets built. Every row in it
+carries `date`, `quantity`, `pricePerUnit` (internally consistent: amount ÷ units = price to
+3dp on every line checked) and a `type` cleanly readable off the transaction description
+("SIP Purchase", "Net Purchase via Online" → `BUY`; no `SELL`/`DIVIDEND` example was present
+in this particular document, so those string formats are still unconfirmed). Three real gaps
+to design for, not hypothetical: see "PDF / LLM holdings import" below.
+
 ---
 
 ## 1. Correctness and safety
 
-Cheap, and each one closes a hole that has already cost us something.
+- **Click through TOTP setup for real.** Flagged when it shipped (2026-08-23) and never
+  followed up on since: `confirmTotpSetup()` is verified at the DB/crypto level (a real
+  encrypt → save → decrypt → verify cycle against live data) but the setup dialog itself
+  has never been driven end to end in a real browser — an environment limitation at the
+  time, not a known bug, but this is a passphrase-*recovery* path, worth confirming it
+  actually works before depending on it to get back in.
 
-| Item | Why |
-|---|---|
-| **Reverse a SIP execution** | A bounced mandate means the app bought units reality did not. `SipExecution` records enough to undo it, but there is no way to. |
-| **Weekly and quarterly SIPs** | Only `MONTHLY` auto-applies. The others store no anchor date, so monthly dates would over-buy them. Falls out of the `Transaction` model. |
+Both items previously here (reversing a SIP execution, weekly/quarterly auto-apply) shipped
+2026-08-24. See `PLAN.md`.
 
 ## 2. Data depth
 
@@ -75,6 +87,47 @@ today. Convert what we can, and surface anything else rather than silently dropp
 | **Goal tracking**: target net worth with a progress read | |
 | **Watchlist** | |
 | **Stock fundamentals on click**: P/E, P/B, market cap, dividend yield, 52-week range. Same Yahoo source already used for prices, a different endpoint (`quoteSummary`, not `chart`); a fund shows expense ratio/AUM/category instead, since "fundamentals" means something else for a mutual fund | |
+
+### Stock/ETF SIP auto-apply
+
+`SipPlan` (2026-09-11) can now target a listed stock or ETF, not just a mutual fund — a gold
+ETF SIP was the real case that prompted it. But auto-apply only actually works for mutual
+funds today: it degrades gracefully for a stock/ETF plan (skips with `NO_SCHEME_CODE`, same
+as any fund missing an AMFI code), so units still have to be added to the holding by hand
+after each debit.
+
+- **Not a hard limitation, just unbuilt.** `applyDueSips()` prices a mutual-fund debit off
+  `resolveAllotmentNav(history, dueDate)` — the *due date's* NAV, not today's — because the
+  cron catches up on a backlog (a missed run applies every outstanding debit in date order),
+  and pricing a three-day-old debit at today's price would silently misprice it. The
+  equivalent for a stock/ETF needs the same shape: a historical-price-by-date fetch, not the
+  latest-quote-only `fetchYahooPrice()` in `lib/portfolio/providers/yahoo-equity.ts`.
+- **Yahoo's chart endpoint already supports this.** It's the same host `fetchYahooPrice()`
+  already calls, just with a date range instead of `range=1d`. Needs a
+  `fetchYahooPriceHistory(symbol, from, to)` alongside it, plus a `resolveAllotmentPrice`
+  mirroring `resolveAllotmentNav`'s weekend/holiday walk-forward (the exchange closed that
+  day → use the next trading day's close, same as a NAV not being published yet).
+- Once that lands, `applyOneDebit()` in `lib/sips/apply.ts` needs no schema change — it
+  already keys off whichever `Instrument` the plan points at.
+
+### 1-day returns, per holding and per app
+
+Alongside the existing since-purchase P/L: how much a holding — or a whole app group in the
+"where it lives" consolidation — moved just today. Unlike XIRR, this does **not** depend on
+the `Transaction` blocker: `Price` is already a real time series (unique per
+`instrumentId`+`asOf`, never overwritten), so 1D change is just `(latest price - prior
+trading day's price) / prior trading day's price`, no new pricing work needed.
+
+- `AppGroup` (`lib/holdings/consolidation.ts`) gains `pnl1dInr`/`pnl1dPct` alongside its
+  existing `pnlInr`/`pnlPct`; `HoldingView` (`lib/portfolio/valuation.ts`) the same, shown as
+  one more column in the holdings table next to P/L.
+- **"Prior day" means prior *trading* day, not prior calendar day.** A missing `Price` row
+  for yesterday is a weekend or market holiday, not zero movement — the same business-day-gap
+  gotcha the NAV series already has (see Known Gotchas in `ARCHITECTURE.md`). Walk back to
+  the most recent row that actually exists rather than assuming yesterday has one.
+- A holding with no fresh price today (a stale or failed provider) shows no 1D figure rather
+  than a stale-looking 0.00% — the same "last good price, never a fabricated one" contract
+  every provider already follows.
 
 ### News: holdings and market, with a tone read, not a signal
 
@@ -144,27 +197,30 @@ passphrase gate) are already per-user, not per-app; and the daily cron already l
   whether a shared household view is ever wanted — different feature, worth being explicit
   it's not what this is by default.
 
-### Bank / UPI transactions: the Account Aggregator framework
+### Bank / UPI transactions: manual statement import, not Account Aggregator
 
-The RBI-sanctioned way to get consent-based, live access to a person's bank data in India:
-a licensed **Account Aggregator** (Setu, Finvu, CAMSfinserv, OneMoney and others) brokers
-consent between a **Financial Information User** (the app requesting data) and **Financial
-Information Providers** (the banks). Becoming a registered FIU is real regulatory overhead,
-not a signup form — that's the honest scope of "look into it properly."
+Looked into the Account Aggregator framework properly and closed it out rather than leaving
+it open. **Account Aggregator** is the RBI-sanctioned, consent-based way to get live access
+to a person's financial data in India — a licensed AA (Setu, Finvu, CAMSfinserv, OneMoney and
+others) brokers consent between a **Financial Information User** (the app requesting data)
+and **Financial Information Providers** (banks; also CDSL/NSDL and CAMS/KFintech, now that
+AA covers demat and mutual-fund holdings too). It is not a path available to a single-user
+app like this one: **only entities already regulated by RBI, SEBI, IRDAI or PFRDA are
+eligible to become an FIU at all** — an unregulated app has no direct route regardless of
+paperwork or patience. Where estimated, the process (for an entity that already clears that
+bar) runs 5–10 months and ₹5–25 lakh+ in year-one cost — becoming a regulated financial
+entity purely to read one person's own accounts. The one workaround, routing through an
+already-regulated entity that acts as FIU on your behalf, trades a clean integration for
+depending on someone else's consumer product; no concrete option for that turned up. This
+closes out the portfolio-holdings angle the same way — Groww/Paytm Money/INDmoney have no
+API of their own either (see PDF/LLM holdings import below).
 
-- **A sandbox/developer mode is the right first step, short of registration.** Several AAs
-  (Setu among them) offer a test environment for evaluating the flow and data shapes before
-  any registration commitment. That's feasibility research, doable now, separate from the
-  decision to actually register.
-- **UPI doesn't need its own integration.** UPI transactions already appear as line items
-  inside the bank account statement they settle through, which is exactly the "Financial
-  Information" an AA already serves — there is no separate personal UPI transaction API
-  from any provider (GPay, PhonePe, Paytm) to chase in parallel.
-- **Manual statement import is the pragmatic near-term path** while AA feasibility gets
-  evaluated: upload a bank-exported PDF/CSV statement, parsed and categorized the same way
-  the PDF/LLM holdings import is planned to work. Delivers real value now, and isn't wasted
-  work if AA access lands later — it becomes the fallback path for whichever accounts
-  aren't AA-linked.
+- **UPI doesn't need its own integration**, moot now anyway: UPI transactions already appear
+  as line items inside the bank statement they settle through, which is exactly the
+  "Financial Information" an AA would have served.
+- **Manual statement import is the actual plan, not a stopgap.** Upload a bank-exported
+  PDF/CSV statement, parsed and categorized the same way the PDF/LLM holdings import works
+  below — same pipeline, same reasoning, pointed at a different document shape.
 
 ### PDF / LLM holdings import
 
@@ -192,6 +248,27 @@ survives that layout variance without a bespoke parser per broker.
   for XIRR, but that path depends on `Transaction` landing first, same as CSV import.
 - Open question for build time: CAS PDFs are password-protected with a PAN-derived
   password, so the upload flow needs a password prompt, not just a file picker.
+- **Three real gaps, confirmed against an actual downloaded CAS, not guessed:**
+  1. **ISIN → `Instrument` resolution is unbuilt.** The CAS identifies a fund by ISIN and an
+     RTA-internal code (e.g. `GD340`), neither of which is the AMFI scheme code
+     `Instrument.externalId` is keyed on. `lib/instruments/search.ts` only searches by name
+     today; the importer needs an ISIN lookup path.
+  2. **`source` isn't in the document at all.** A CAS shows an Advisor/ARN distributor code
+     per folio (e.g. `INZ000240532`), never a literal broker name like "Groww" — resolving
+     that mapping needs a one-time question back to the user, not a guess embedded in the
+     parser.
+  3. **Real noise to filter, seen firsthand**: `*** Stamp Duty ***` lines (a fee, no units —
+     excluded from the amount/units/price identity check), `***Cancelled***` and
+     `***Address Updated...***` lines (pure noise), and legitimate same-day duplicate
+     installment numbers (two distinct transactions, not a dedupe target).
+  4. **One structural fact to design around**: a single holding routinely spans 2–3 folios
+     (different advisor code and/or demat vs. non-demat of the same scheme) — the importer
+     sums across folios into one `Holding` per (instrument, source), same as today, while
+     still writing one `Transaction` row per underlying folio-transaction.
+- **No single CAS is complete.** Confirmed independently (see "why is my CAS missing
+  folios" — a folio only appears if its email matches the one the CAS was pulled for): the
+  importer should expect to merge multiple CAS pulls (different emails) and broker exports
+  over time, not assume one document is ever the full picture.
 
 ## 4. It reaches you
 

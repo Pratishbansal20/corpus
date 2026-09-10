@@ -38,7 +38,7 @@ function pnlClass(value: number): string {
   return "text-muted-foreground";
 }
 
-type SortField = "name" | "source" | "quantity" | "invested" | "value" | "pnl" | "weight";
+type SortField = "name" | "source" | "quantity" | "value" | "pnl" | "weight";
 type SortOrder = "asc" | "desc";
 
 function SortHeader({
@@ -91,10 +91,6 @@ export function HoldingsTable({
         case "quantity":
           valA = a.quantity;
           valB = b.quantity;
-          break;
-        case "invested":
-          valA = a.investedInr;
-          valB = b.investedInr;
           break;
         case "value":
           valA = a.currentValueInr;
@@ -186,6 +182,8 @@ export function HoldingsTable({
                 <span>
                   Qty {formatQuantity(h.quantity)} · Avg{" "}
                   {formatNative(h.avgBuyPrice, h.currency)}
+                  {h.hasLivePrice &&
+                    ` (${formatNative(h.currentPrice, h.currency)})`}
                 </span>
                 <span>{h.weightPct.toFixed(1)}% of portfolio</span>
               </div>
@@ -195,7 +193,11 @@ export function HoldingsTable({
                   <div className="font-semibold num">
                     {formatInr(h.currentValueInr)}
                   </div>
-                  {!h.hasLivePrice && (
+                  {h.hasLivePrice ? (
+                    <div className="text-muted-foreground text-[10px] num">
+                      ({formatInr(h.investedInr)})
+                    </div>
+                  ) : (
                     <div className="text-muted-foreground text-[10px]">
                       cost basis
                     </div>
@@ -245,12 +247,9 @@ export function HoldingsTable({
             <TableHead className="text-right">
               <SortHeader field="quantity" activeField={sortField} onSort={handleSort}>Qty</SortHeader>
             </TableHead>
-            <TableHead className="text-right">Avg buy</TableHead>
+            <TableHead className="text-right">Avg buy (LTP)</TableHead>
             <TableHead className="text-right">
-              <SortHeader field="invested" activeField={sortField} onSort={handleSort}>Invested</SortHeader>
-            </TableHead>
-            <TableHead className="text-right">
-              <SortHeader field="value" activeField={sortField} onSort={handleSort}>Value</SortHeader>
+              <SortHeader field="value" activeField={sortField} onSort={handleSort}>Value (Invested)</SortHeader>
             </TableHead>
             <TableHead className="text-right">
               <SortHeader field="pnl" activeField={sortField} onSort={handleSort}>P/L</SortHeader>
@@ -284,14 +283,20 @@ export function HoldingsTable({
                 {formatQuantity(h.quantity)}
               </TableCell>
               <TableCell className="text-right num">
-                {formatNative(h.avgBuyPrice, h.currency)}
-              </TableCell>
-              <TableCell className="text-right num">
-                {formatInr(h.investedInr)}
+                <div>{formatNative(h.avgBuyPrice, h.currency)}</div>
+                {h.hasLivePrice && (
+                  <div className="text-muted-foreground text-[10px]">
+                    ({formatNative(h.currentPrice, h.currency)})
+                  </div>
+                )}
               </TableCell>
               <TableCell className="text-right num">
                 <div>{formatInr(h.currentValueInr)}</div>
-                {!h.hasLivePrice && (
+                {h.hasLivePrice ? (
+                  <div className="text-muted-foreground text-[10px]">
+                    ({formatInr(h.investedInr)})
+                  </div>
+                ) : (
                   <div className="text-muted-foreground text-[10px]">cost basis</div>
                 )}
               </TableCell>

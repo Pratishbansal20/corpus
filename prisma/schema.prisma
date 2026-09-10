@@ -341,6 +341,11 @@ model SipExecution {
   bankAccountId  String?
   bankDebitedInr Decimal? @db.Decimal(20, 2)
   appliedAt      DateTime @default(now())
+  // Set when this debit is undone (a bounced mandate, a mistaken entry). The
+  // row stays rather than being deleted: it's still the audit trail for what
+  // happened, and it's still what the next cron run's "last execution" cursor
+  // reads to avoid re-buying the exact date that was just reversed.
+  reversedAt DateTime?
 
   sipPlan     SipPlan      @relation(fields: [sipPlanId], references: [id], onDelete: Cascade)
   bankAccount BankAccount? @relation(fields: [bankAccountId], references: [id], onDelete: SetNull)

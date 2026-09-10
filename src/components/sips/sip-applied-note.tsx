@@ -1,5 +1,6 @@
 import { formatInr, formatNative, formatQuantity } from "@/lib/money";
 import type { SipAppliedView } from "@/lib/sips/constants";
+import { ReverseSipButton } from "./reverse-sip-button";
 
 const dayFmt = new Intl.DateTimeFormat("en-IN", {
   day: "numeric",
@@ -19,23 +20,43 @@ const dayFmt = new Intl.DateTimeFormat("en-IN", {
  * The bank line is the other half of the same receipt. The app draws the money
  * down on its own, so it has to say which account it came out of.
  */
-export function SipAppliedNote({ applied }: { applied: SipAppliedView }) {
+export function SipAppliedNote({
+  applied,
+  sipPlanId,
+  fundName,
+}: {
+  applied: SipAppliedView;
+  sipPlanId: string;
+  fundName: string;
+}) {
   const shifted =
     applied.navDate.getTime() !== applied.dueDate.getTime();
 
+  if (applied.reversedAt) {
+    return (
+      <p className="text-muted-foreground text-xs">
+        Applied {dayFmt.format(applied.navDate)}, reversed{" "}
+        {dayFmt.format(applied.reversedAt)}.
+      </p>
+    );
+  }
+
   return (
-    <p className="text-muted-foreground text-xs">
-      Applied {dayFmt.format(applied.navDate)} at NAV{" "}
-      <span className="num">{formatNative(applied.nav, "INR")}</span> ·{" "}
-      <span className="num">{formatQuantity(applied.units)}</span> units
-      {shifted && <> (due {dayFmt.format(applied.dueDate)})</>}
-      {applied.debitedFrom && (
-        <>
-          {" · "}
-          <span className="num">{formatInr(applied.amountInr)}</span> from{" "}
-          {applied.debitedFrom}
-        </>
-      )}
-    </p>
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+      <p className="text-muted-foreground text-xs">
+        Applied {dayFmt.format(applied.navDate)} at NAV{" "}
+        <span className="num">{formatNative(applied.nav, "INR")}</span> ·{" "}
+        <span className="num">{formatQuantity(applied.units)}</span> units
+        {shifted && <> (due {dayFmt.format(applied.dueDate)})</>}
+        {applied.debitedFrom && (
+          <>
+            {" · "}
+            <span className="num">{formatInr(applied.amountInr)}</span> from{" "}
+            {applied.debitedFrom}
+          </>
+        )}
+      </p>
+      <ReverseSipButton sipPlanId={sipPlanId} fundName={fundName} />
+    </div>
   );
 }

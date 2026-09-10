@@ -43,3 +43,7 @@ next-env.d.ts
 
 # prisma generated client (regenerated via postinstall)
 /src/generated
+
+# raw source documents staged for the future Transaction-model importer
+# (CAS PDFs etc. carry real PAN/address/mobile — never committed)
+/data/cas-raw

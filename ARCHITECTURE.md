@@ -89,12 +89,19 @@ src/
     api/cron/refresh/route.ts     the one scheduled job
     api/export/report/route.ts   PDF export, streamed as an attachment
     api/auth/[...nextauth]/       Auth.js handler
-    apple-icon.tsx, opengraph-image.tsx   generated with next/og, reuse icon.svg's geometry
+    api/export/backup/route.ts   encrypted full-data export, streamed as an attachment
+    apple-icon.tsx, opengraph-image.tsx, icons/[size]/route.tsx, icon.svg
+                                   generated with next/og (except icon.svg, static); all draw
+                                   from lib/mark.tsx, the one place the brand mark's geometry
+                                   lives (icon.svg is the one file that can't import it — see
+                                   Known Gotchas)
+    manifest.ts, offline/page.tsx  PWA install manifest + offline fallback page
   components/
     <domain>/                     dialogs, tables: one component file per concern
     ui/                           shadcn/Base UI primitives, generic
     charts/                       recharts wrappers
     layout/loading/               skeleton-kit.tsx + loading-mark.tsx, shared by every loading.tsx
+    security/                     TOTP setup + encrypted backup export dialogs
   lib/
     <domain>/
       schema.ts        Zod validation + pure helpers (date math, labels)
@@ -105,6 +112,9 @@ src/
     portfolio/providers/         PriceProvider / FxProvider implementations
     http/fetch-retry.ts          the one retry-with-timeout wrapper every outbound fetch uses
     pdf/                         report-data.ts (gather) + build-report-pdf.ts (render)
+    backup/                      full-account encrypted export: gather.ts (collect) + crypto.ts (encrypt)
+    security/totp.ts             TOTP passphrase-recovery secret generation/verification
+    mark.tsx                     the brand mark's geometry, as both data and JSX components
     db/prisma.ts                 the one PrismaClient singleton
     crypto/encryption.ts         AES-256-GCM field encryption
   generated/prisma/              Prisma client output, gitignored
@@ -160,6 +170,23 @@ twice cannot buy the same units twice. `dueDate` (scheduled) and `navDate`
 (NAV actually used) are stored separately because they diverge on a weekend
 or public holiday; see
 [Debit date vs. allotment date](#debit-date-vs-allotment-date).
+`reversedAt` marks a bounced-mandate reversal without deleting the row: the
+row is still both the audit trail and the cron's "last execution" cursor, so
+deleting it would make the very next run re-apply the exact debit that was
+just reversed. Reversal is scoped to only the most recent, not-yet-reversed
+execution per plan — `Holding.quantity`/`avgBuyPrice` are running totals, not
+a ledger, so undoing an older execution while newer ones sit on top of it has
+no correct answer without a stored order to replay.
+
+**`SipPlan.dayOfMonth` is overloaded by `frequency`.** For `MONTHLY` and
+`QUARTERLY` it's the within-month day; for `WEEKLY` it's instead a day of
+week (0 Sun – 6 Sat, matching `Date.getUTCDay()`). No separate column for
+either: `QUARTERLY`'s phase (which three months of the year it lands in)
+comes from the plan's own `applyFrom` instead — a plan created in March
+debits March/June/September/December, one created in April debits
+April/July/October/January. `nextSipDate()`/`dueDatesBetween()`
+(`lib/sips/schema.ts`) take `frequency` as a parameter and branch on it;
+`MONTHLY`'s own math is untouched by either of the other two.
 
 **`PortfolioSnapshot`** is one row per user per day, unique on
 `(userId, asOf)`, holding both investment totals and full net-worth totals
@@ -258,10 +285,26 @@ everywhere dates are constructed, not patched per call site.
 Google OAuth (Auth.js, database sessions) gets you a `User` row; it does not
 get you into the app. `Session.unlockedAt` is set only after a separate app
 passphrase (`scrypt`, verified in `lib/security/passphrase.ts`) is entered at
-`/unlock`. `requireUnlocked()` gates the entire `(dashboard)` route group.
-The email allowlist (`OWNER_EMAIL`) is checked at sign-in *and* again on
-every `requireUser()` call, so revoking the owner email invalidates an
-already-signed-in session, not just future sign-ins.
+`/unlock`. `requireUnlocked()` gates the entire `(dashboard)` route group,
+and an unlock now expires after 7 days (`UNLOCK_TTL_MS`,
+`lib/security/unlock.ts`) rather than lasting for the life of the (rolling,
+effectively-forever) session cookie. The email allowlist (`OWNER_EMAIL`) is
+checked at sign-in *and* again on every `requireUser()` call, so revoking the
+owner email invalidates an already-signed-in session, not just future
+sign-ins.
+
+**TOTP is passphrase-recovery only, never a routine second gate.**
+`UserSecurity.totpSecretEnc` (AES-256-GCM, same as bank account numbers) lets
+someone who's forgotten the passphrase prove who they are with an
+authenticator-app code and set a new one at `/unlock`; `requireUnlocked()`
+itself never checks it. Setup only ever writes the secret after a real code
+verifies against it (`confirmTotpSetup()`) — an abandoned setup dialog leaves
+no live, unconfirmed recovery method behind.
+
+**Backup export** (`/api/export/backup`) streams the full account —
+holdings, bank accounts, cards, SIPs — as one AES-256-GCM-encrypted file,
+gathered by `lib/backup/gather.ts` through the same masked query layer every
+page already reads through.
 
 Sensitive fields get one of three treatments, never plaintext storage of the
 real thing:
@@ -271,7 +314,33 @@ real thing:
 | Card / bank account number | Last 4 digits only, by default |
 | Full bank account number / IFSC | Optional, AES-256-GCM (`lib/crypto/encryption.ts`), never plaintext |
 | App passphrase | `scrypt` hash + salt; the passphrase itself is never stored |
+| TOTP recovery secret | AES-256-GCM, same cipher as bank details |
+| Backup export file | AES-256-GCM, whole file |
 | Card PAN / CVV | Never collected, at all |
+
+### Installable, with a ceiling on what the service worker does
+
+The manifest (`app/manifest.ts`) and service worker (`public/sw.js`) make
+Corpus installable, but the service worker is a deliberate ceiling, not a
+first step toward more: it intercepts exactly one thing, a page navigation
+that fails with no network, answering it with a small branded `/offline`
+page instead of the browser's own error screen. Every dashboard page is a
+live DB read per request — there is no meaningful "offline data" to serve —
+and this project has already been burned once by an over-aggressive cache
+(see Known Gotchas), so a service worker that cached bundles or authenticated
+pages would be exactly that class of bug, at browser-cache scope, on a
+finance app. Registered only in production: one registered under `next dev`
+outlives the dev server that started it, so registering nothing in dev means
+nothing to unregister by hand after every restart.
+
+### Dismissible reminders are session-only, never persisted
+
+The Overview's nudges (`RemindersList`) can each be dismissed with an X, but
+a dismissal is never written anywhere — it clears for the rest of the visit
+and nothing more. These nudges exist to surface a real, unresolved problem (a
+dead price feed, a balance nobody's touched); a dismissal that survived a
+reload would let a genuine one go quiet permanently, which is the opposite of
+the point.
 
 ### No stack migration
 
@@ -313,7 +382,7 @@ an expected miss.
 
 - `npm test` (vitest), `tsc --noEmit`, `eslint`, `npm run build`: all four green
   before anything is considered done, and all four run in CI
-  (`.github/workflows/ci.yml`) on every PR and push to `main`. 111 tests as of
+  (`.github/workflows/ci.yml`) on every PR and push to `main`. 139 tests as of
   this writing, entirely unit-level: date/calendar math, Decimal arithmetic,
   provider parsing, schema validation, PDF-byte assertions for the export. No
   end-to-end test suite.
@@ -360,6 +429,22 @@ an expected miss.
   immediately and only those two small pieces show a brief shimmer. See
   [Route-level loading UI](PLAN.md#route-level-loading-ui-and-a-logo-pass-2026-08-21)
   for the full reasoning.
+- **`staleTimes.dynamic: 30` (`next.config.ts`) caches a visited page
+  client-side for 30 seconds, and a `redirect()` from a server action can
+  land right back on a stale cached response instead of hitting the server
+  again.** A page visited *before* a mutation (e.g. `/unlock` while still
+  locked, cached as "redirects to `/unlock`") stays cached under that old
+  outcome; a soft navigation — exactly what a server action's `redirect()`
+  performs — can replay it, so the action appears to silently do nothing,
+  repeatedly, even though the database write genuinely succeeded. A typed
+  URL (hard navigation) always bypasses this cache, which is the tell: if a
+  mutation "isn't working" but reaches the right state when the URL is
+  retyped, this is almost certainly why. Every mutation that redirects
+  afterward must call `revalidatePath()` on every page the redirect (or the
+  mutation itself) could land on *first* — this bit `/unlock` specifically
+  once real code paths existed to prove it (see
+  [PLAN.md](PLAN.md#dismissible-reminders-longer-leashes-for-two-of-them-and-a-real-unlock-bug-2026-08-24)),
+  but the same rule applies to any redirect-after-mutation, not just that one.
 - **Base UI + RSC:** don't pass a JSX trigger element from a Server Component
   into a Client Component and `cloneElement` it ("Element type is invalid").
   Client components build their own triggers. Base UI `Button` uses

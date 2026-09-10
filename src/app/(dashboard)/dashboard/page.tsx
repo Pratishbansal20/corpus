@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, ArrowUpRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -48,6 +48,7 @@ import { PortfolioTrends } from "@/components/charts/portfolio-trends";
 import { AllocationDonut } from "@/components/charts/allocation-donut";
 import { CompositionLine } from "@/components/charts/composition-line";
 import { SectionHeading } from "@/components/layout/section-heading";
+import { RemindersList } from "@/components/layout/reminders-list";
 
 const dateFmt = new Intl.DateTimeFormat("en-IN", {
   day: "numeric",
@@ -60,6 +61,16 @@ function pnlClass(value: number): string {
   if (value < 0) return "text-loss";
   return "text-muted-foreground";
 }
+
+// Stale-data nudge thresholds. Bank/asset balances are things you'd
+// realistically touch often (a transfer, a top-up); credit score and
+// mutual-fund lump-sums move on a slower, more natural cadence (a monthly
+// bureau pull, an occasional lump-sum buy), so those two get a longer leash
+// before nagging. Price staleness has its own, much shorter-fused check —
+// see STALE_PRICE_DAYS in lib/holdings/stale-prices.ts.
+const ACCOUNT_STALE_DAYS = 15;
+const CREDIT_SCORE_STALE_DAYS = 45;
+const MF_UNITS_STALE_DAYS = 45;
 
 export default async function DashboardPage() {
   const user = await requireUser();
@@ -84,7 +95,7 @@ export default async function DashboardPage() {
       getSipPlans(user.id),
       getNetWorthHistory(user.id),
       getInvestmentReturnsHistory(user.id),
-      countStaleMutualFunds(user.id, 15),
+      countStaleMutualFunds(user.id, MF_UNITS_STALE_DAYS),
       getStalePricedHoldings(user.id),
     ]);
 
@@ -137,31 +148,34 @@ export default async function DashboardPage() {
     .slice(0, 6);
 
   // Stale-data nudges: a balance you typed six weeks ago isn't a balance.
-  const STALE_DAYS = 15;
-  const staleThreshold = new Date();
-  staleThreshold.setDate(staleThreshold.getDate() - STALE_DAYS);
+  const accountStaleThreshold = new Date();
+  accountStaleThreshold.setDate(accountStaleThreshold.getDate() - ACCOUNT_STALE_DAYS);
+  const creditScoreStaleThreshold = new Date();
+  creditScoreStaleThreshold.setDate(
+    creditScoreStaleThreshold.getDate() - CREDIT_SCORE_STALE_DAYS,
+  );
 
   const reminders: { id: string; message: string; href: string }[] = [];
-  const staleBanks = banks.filter((b) => new Date(b.asOf) < staleThreshold);
+  const staleBanks = banks.filter((b) => new Date(b.asOf) < accountStaleThreshold);
   if (staleBanks.length > 0) {
     reminders.push({
       id: "banks",
-      message: `${staleBanks.length} bank balance${staleBanks.length > 1 ? "s haven't" : " hasn't"} been updated in ${STALE_DAYS} days.`,
+      message: `${staleBanks.length} bank balance${staleBanks.length > 1 ? "s haven't" : " hasn't"} been updated in ${ACCOUNT_STALE_DAYS} days.`,
       href: "/accounts",
     });
   }
-  const staleAssets = assets.filter((a) => new Date(a.asOf) < staleThreshold);
+  const staleAssets = assets.filter((a) => new Date(a.asOf) < accountStaleThreshold);
   if (staleAssets.length > 0) {
     reminders.push({
       id: "assets",
-      message: `${staleAssets.length} asset value${staleAssets.length > 1 ? "s haven't" : " hasn't"} been updated in ${STALE_DAYS} days.`,
+      message: `${staleAssets.length} asset value${staleAssets.length > 1 ? "s haven't" : " hasn't"} been updated in ${ACCOUNT_STALE_DAYS} days.`,
       href: "/accounts",
     });
   }
-  if (creditScore && new Date(creditScore.asOf) < staleThreshold) {
+  if (creditScore && new Date(creditScore.asOf) < creditScoreStaleThreshold) {
     reminders.push({
       id: "credit",
-      message: `Your credit score is more than ${STALE_DAYS} days old.`,
+      message: `Your credit score is more than ${CREDIT_SCORE_STALE_DAYS} days old.`,
       href: "/settings",
     });
   }
@@ -181,7 +195,7 @@ export default async function DashboardPage() {
   if (staleMfs > 0) {
     reminders.push({
       id: "mf-units",
-      message: `${staleMfs} mutual fund${staleMfs > 1 ? "s have" : " has"} not had units updated in ${STALE_DAYS} days. Add any lump-sum purchases.`,
+      message: `${staleMfs} mutual fund${staleMfs > 1 ? "s have" : " has"} not had units updated in ${MF_UNITS_STALE_DAYS} days. Add any lump-sum purchases.`,
       href: "/holdings",
     });
   }
@@ -221,22 +235,7 @@ export default async function DashboardPage() {
         />
       </section>
 
-      {reminders.length > 0 && (
-        <div className="flex flex-col gap-2">
-          {reminders.map((r) => (
-            <Link
-              key={r.id}
-              href={r.href}
-              className="border-primary/25 bg-primary/[0.06] text-primary/90 hover:bg-primary/[0.1] flex items-center justify-between gap-4 rounded-lg border px-4 py-2.5 text-xs transition-colors"
-            >
-              <span>{r.message}</span>
-              <span className="flex shrink-0 items-center gap-1 font-medium">
-                Update <ArrowUpRight className="size-3.5" />
-              </span>
-            </Link>
-          ))}
-        </div>
-      )}
+      <RemindersList reminders={reminders} />
 
       {/* Quiet stat rail: supporting figures, deliberately not five more cards. */}
       <section className="border-border grid grid-cols-2 gap-x-6 gap-y-6 border-y py-6 sm:grid-cols-4">

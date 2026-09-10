@@ -51,18 +51,20 @@ export async function getSipPlans(userId: string): Promise<SipView[]> {
       return {
         id: s.id,
         instrumentId: s.instrumentId,
+        instrumentType: s.instrument.type,
         fundName: s.instrument.name,
         fundSymbol: s.instrument.symbol,
         amountInr: s.amountInr.toNumber(),
         frequency: s.frequency,
         dayOfMonth: s.dayOfMonth,
-        nextDate: nextSipDate(s.dayOfMonth),
+        nextDate: nextSipDate(s.frequency, s.dayOfMonth, s.applyFrom),
         active: s.active,
         source: s.source,
         bankAccountId: s.bankAccountId,
         bankLabel: s.bankAccount ? bankLabel(s.bankAccount) : null,
         lastApplied: last
           ? {
+              executionId: last.id,
               dueDate: last.dueDate,
               navDate: last.navDate,
               nav: last.navUsed.toNumber(),
@@ -73,6 +75,7 @@ export async function getSipPlans(userId: string): Promise<SipView[]> {
               debitedFrom: last.bankAccount
                 ? bankLabel(last.bankAccount)
                 : null,
+              reversedAt: last.reversedAt,
             }
           : null,
       };
@@ -86,12 +89,12 @@ export async function getSipPlans(userId: string): Promise<SipView[]> {
  */
 export async function rollForwardSipDates(): Promise<number> {
   const rows = await prisma.sipPlan.findMany({
-    select: { id: true, dayOfMonth: true, nextDate: true },
+    select: { id: true, frequency: true, dayOfMonth: true, applyFrom: true, nextDate: true },
   });
 
   let updated = 0;
   for (const s of rows) {
-    const next = nextSipDate(s.dayOfMonth);
+    const next = nextSipDate(s.frequency, s.dayOfMonth, s.applyFrom);
     if (next.getTime() !== s.nextDate.getTime()) {
       await prisma.sipPlan.update({
         where: { id: s.id },

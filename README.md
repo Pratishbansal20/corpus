@@ -3,6 +3,7 @@
 Corpus is a personal finance app for one person. It brings together stocks,
 mutual funds, bank accounts, credit cards, SIPs and a credit score into one
 net worth number, plus a view into what's inside your mutual funds.
+Installable as a PWA.
 
 **Live:** https://corpusfinance.vercel.app
 

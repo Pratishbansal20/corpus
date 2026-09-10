@@ -1,18 +1,21 @@
 // Shared types and labels for SIP plans.
 // This file is safe to import in client components (no Prisma dependency).
 
-import type { SipFrequency } from "@/generated/prisma";
+import type { InstrumentType, SipFrequency } from "@/generated/prisma";
+export type { SipFrequency };
 
 // The most recent debit applied to the holding automatically. Carried on the
 // view so an automatic change to a money figure is always explained where the
 // figure is shown.
 export type SipAppliedView = {
+  executionId: string;
   dueDate: Date;
   navDate: Date; // differs from dueDate when the debit hit a weekend or holiday
   nav: number;
   units: number;
   amountInr: number;
   debitedFrom: string | null; // bank the cash left, null when the plan is unlinked
+  reversedAt: Date | null;
 };
 
 // The account a SIP mandate debits, as shown in the dropdown and on the row.
@@ -24,6 +27,7 @@ export type SipBankView = {
 export type SipView = {
   id: string;
   instrumentId: string;
+  instrumentType: InstrumentType;
   fundName: string;
   fundSymbol: string;
   amountInr: number;

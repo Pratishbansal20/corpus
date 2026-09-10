@@ -1,6 +1,6 @@
 # Personal Finance Hub: Plan & Status (v3)
 
-_Last updated 2026-08-23. This file is the changelog: what's built and the reasoning and bugs
+_Last updated 2026-08-24. This file is the changelog: what's built and the reasoning and bugs
 behind each change, in the order it happened. For the standing architecture and design
 decisions, see [`ARCHITECTURE.md`](ARCHITECTURE.md). For what's next, see [`TODO.md`](TODO.md)._
 _Mirrored from the Claude Code plan; kept in-repo so it's openable on GitHub / the Claude app._
@@ -788,3 +788,136 @@ first — worth remembering that nudge exists for exactly this failure mode.
 
 Known gotchas moved to [`ARCHITECTURE.md`](ARCHITECTURE.md#known-gotchas), alongside the design
 decisions each one is entangled with.
+
+---
+
+### Dismissible reminders, longer leashes for two of them, and a real /unlock bug (2026-08-24)
+
+**Dismiss, session-only.** `RemindersList` (`components/layout/reminders-list.tsx`) adds an
+X to each Overview nudge. Deliberately not persisted: these nudges exist to surface a real,
+unresolved problem (a dead price feed, a balance nobody's touched), and a dismiss that
+survived a reload would let a genuine one go quiet permanently — the opposite of the point.
+Dismissing clears it for the rest of the visit; a reload (or the next day) shows anything
+still actually true.
+
+**Credit score and mutual-fund-units nudges, 15 → 45 days.** Bank/asset balances are things
+you'd realistically touch often; credit score and MF lump-sums move on a slower, natural
+cadence (a monthly bureau pull, an occasional lump-sum buy), so 15 days was nagging too
+early for those two specifically. Bank/asset balances stayed at 15. The stale-*price* nudge
+is unrelated and untouched: `findStalePrices()`'s 5-day peer-comparison check
+(`STALE_PRICE_DAYS`, `lib/holdings/stale-prices.ts`) already existed before this change and
+already matched what was asked for here.
+
+**Bug fix: /unlock wouldn't redirect after a correct passphrase.** Entering the right
+passphrase repeatedly did nothing visible; typing `/dashboard` into the address bar directly
+afterward worked immediately. `unlockSession()` and `recoverWithTotp()` both call
+`redirect("/dashboard")` after a real, successful DB write (`unlockedAt` genuinely updated
+each time) — the update was never the problem. The redirect was landing on a *stale
+client-side cache* of `/dashboard`: `next.config.ts` sets `staleTimes.dynamic: 30`, so the
+earlier visit that got bounced to `/unlock` (rendered *while still locked*) stays cached
+client-side as "redirects to /unlock" for up to 30 seconds. A soft navigation — exactly what
+a server action's `redirect()` performs — can replay that stale cached response instead of
+hitting the server again; a typed URL is a hard navigation and always bypasses it, which is
+exactly the asymmetry that was reported. Every other mutation in this app already calls
+`revalidatePath()` for precisely this reason (documented in `next.config.ts`'s own comment);
+this one code path just hadn't needed it before the client router cache existed. Fixed with
+one shared helper, `unlockCurrentSessionAndRedirect()`, called by both `unlockSession()` and
+`recoverWithTotp()`: revalidates every route the `(dashboard)` layout gates (listed
+explicitly — a route *group* has no shared URL prefix to revalidate in one call), then
+redirects.
+
+Verified: `tsc`, `eslint`, all 127 tests, `next build` all green. The redirect fix itself
+could not be interactively click-tested in this session (the same environment limitation
+noted throughout — no compositing, so no real clicks) — it rests on the mechanism matching
+exactly, not on watching it happen. Worth a real check: enter the passphrase at `/unlock`
+and confirm it lands on `/dashboard` without retyping the URL. Confirmed fixed against the
+live app afterward.
+
+### LTP and Invested surfaced alongside Avg buy and Value; returns lead with ₹ (2026-08-24)
+
+`HoldingsTable` already computed `currentPrice` per holding; it just never showed it
+anywhere next to what it's compared against. Both the desktop table and the mobile card
+layout now show it bracketed under Avg buy — `₹10.04 (₹10.15)` — and Invested bracketed
+under Value the same way, only when `hasLivePrice` is true: when it's false, `currentPrice`
+already equals `avgBuyPrice` (the valuation layer's own cost-basis fallback), so showing
+that identical number twice would be redundant noise on top of the existing "cost basis"
+tag, not new information. Desktop's separate "Invested" column is gone, merged into "Value"
+(`Value (Invested)`, one sortable header) — the two numbers are read together anyway, and
+splitting them was two columns' worth of table width for something naturally read as one.
+The unused `"invested"` `SortField` case went with it.
+
+Funds returns flipped to lead with the absolute ₹ figure, percentage secondary — both the
+page-level summary stat (which already showed both, just percent-first) and each per-fund
+row in the overlap section (which showed *only* a percentage before; the absolute figure is
+new there, not just reordered). Confirmed live against real data on both pages, not just
+read back from the diff.
+
+Asked in passing whether fund overlap and constituents "get updated" — they do, on two
+different clocks. Constituents (`FundHolding` rows) refresh via `refreshFundHoldings()`,
+scraped from Groww, on the daily cron and the manual "Refresh holdings" button; a failed
+scrape keeps the last-known-good rows rather than blanking them (same graceful-degradation
+contract as every price provider). Overlap is not a stored value at all —
+`overlapMatrix()`/`pairwiseOverlap()` (`lib/funds/analysis.ts`) compute it fresh from
+whatever constituent rows exist on every single page load, so it can never itself go stale
+independently of the constituents it's derived from.
+
+### SIP execution reversal, and weekly/quarterly auto-apply (2026-08-24)
+
+Both from TODO §1. TODO's own text said weekly/quarterly "falls out of the Transaction
+model" — turned out not to be true. The real gap was narrower: `SipPlan` only ever stored
+`dayOfMonth`, which has no meaning for "which day of the week," and `dueDatesBetween()` was
+hardcoded to walk month by month regardless of the plan's actual `frequency`. Closed both
+without touching the schema for cadence itself — no new columns, no Transaction model:
+
+- **WEEKLY** reuses the `dayOfMonth` column as a day-of-week (0 Sun – 6 Sat, JS's own
+  `getUTCDay()`, chosen so the date math never needs a translation table). The form shows an
+  explicit Mon–Sun picker when Weekly is selected, not a repurposed 1–31 number input — a
+  user shouldn't have to know "day of month" secretly means something else.
+- **QUARTERLY** reuses `dayOfMonth` as-is (the within-month day, exactly like MONTHLY) and
+  gets its phase — which three months of the year it lands in — from the plan's own
+  `applyFrom` (already stored for every plan, set to today at creation, untouched by later
+  edits). A plan created in March debits in March/June/September/December; one created in
+  April debits in April/July/October/January. No new field: whichever month the plan was
+  actually set up in becomes its phase, the same way its day-of-month already anchors the
+  within-month date.
+- `nextSipDate()`/`dueDatesBetween()` (`lib/sips/schema.ts`) both took a `frequency`
+  parameter without changing a single line of MONTHLY's own behavior — same walk, same
+  clamping, `monthQualifiesForQuarter()` just short-circuits to always-true for MONTHLY.
+  26 tests now (was 14): every existing MONTHLY case unchanged, plus WEEKLY and QUARTERLY
+  cases including the always-qualifies check and a short-month clamp for QUARTERLY. The one
+  real mistake caught by running them rather than reading them: a QUARTERLY window test's
+  own *expected* array was wrong (it excluded a date the window I'd set genuinely included) —
+  worth noting since it's exactly the class of error tests exist to catch, including from
+  whoever wrote them.
+- `apply.ts`'s `NOT_MONTHLY` skip reason is gone; the cron and manual refresh now apply all
+  three cadences through the same path, no special-casing.
+
+**Reversal**, scoped to only the most recent, not-yet-reversed execution per plan (confirmed
+before building, not assumed) — not because the math can't handle an older one in isolation,
+but because `Holding.quantity`/`avgBuyPrice` are running totals, not a ledger, so "undo an
+old one while newer ones sit on top of it" has no correct answer without replaying debits in
+order, and there is no stored order to replay. `SipExecution` gained `reversedAt` rather than
+allowing a delete: the row is still the audit trail, and it's still what the next cron run's
+"last execution" cursor reads — deleting it would make the very next run re-apply the exact
+debit that was just reversed.
+
+`lib/sips/reverse.ts`'s math leans on an identity that already holds everywhere else in this
+app: `avgBuyPrice = invested / quantity`, because every write path (SIP debits, top-ups)
+computes the average from money in rather than backwards from a rounded unit count. To
+reverse an execution: `newQuantity = quantity - unitsAdded`,
+`newAvgBuyPrice = (quantity × avgBuyPrice - amountInr) / newQuantity`. Refuses outright if
+`newQuantity` would go negative (the holding has fewer units than this debit added — almost
+certainly hand-edited since); zeroes the average cleanly rather than dividing by zero if it
+lands on exactly zero. The one honest limitation, documented in the module rather than
+hidden: if the holding was directly overwritten by hand (the Edit dialog *sets* values, it
+doesn't blend) after this execution applied, the invested-money identity no longer holds and
+the reversal math would be wrong — the same class of gap as everywhere else pre-dating a
+real transaction ledger, not a new one.
+
+Verified past the two new test files: a throwaway instrument/bank/holding/plan/execution
+(not the real account's data) exercised the actual apply-then-reverse cycle end to end
+against the live database — quantity, average, and bank balance all landed back on their
+exact pre-debit values, a second reversal attempt on the same execution was correctly
+refused, and everything was deleted afterward. Checked live on the real account too: the
+funds page's "Applied ... · Reverse" line renders correctly against real SIP data.
+`tsc`, `eslint`, all 139 tests, `next build` all green.

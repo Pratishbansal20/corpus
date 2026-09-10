@@ -30,7 +30,6 @@ import { blendedAverage, unitsForAmount } from "./math";
 
 /** Why a plan produced no execution on this run. Reported, never silent. */
 export type SipSkipReason =
-  | "NOT_MONTHLY" // cadence has no anchor date, applying it would over-buy
   | "NO_START_DATE" // applyFrom unset: refuse to guess how far back to go
   | "NO_SCHEME_CODE" // instrument has no AMFI code, so no NAV history
   | "NAV_NOT_PUBLISHED" // debit is due but its NAV does not exist yet: retry
@@ -106,19 +105,15 @@ export async function applyDueSips(now = new Date()): Promise<SipApplyResult> {
     const skip = (reason: SipSkipReason) =>
       result.skipped.push({ sipPlanId: plan.id, fundName, reason });
 
-    // Only day-of-month is stored, with no start date to anchor a cadence from,
-    // so a weekly or quarterly plan cannot be resolved to real debit dates.
-    // Generating monthly dates for a quarterly plan would buy three times the
-    // units, so those are left for the transaction model in Phase 2.
-    if (plan.frequency !== "MONTHLY") {
-      skip("NOT_MONTHLY");
-      continue;
-    }
-
     // The last debit already reflected in the holding. Executions win once they
     // exist; before that it is applyFrom, the date the position was reconciled
     // against the broker. With neither, refuse: walking back to createdAt would
     // re-buy units that the reconciled quantity already contains.
+    //
+    // A reversed execution still counts here: it's still the last dueDate this
+    // plan has "dealt with" (undoing its effects, not un-scheduling it), so
+    // the next run must not treat that date as still outstanding and re-apply
+    // the exact debit that was just reversed.
     const lastExecution = await prisma.sipExecution.findFirst({
       where: { sipPlanId: plan.id },
       orderBy: { dueDate: "desc" },
@@ -129,7 +124,13 @@ export async function applyDueSips(now = new Date()): Promise<SipApplyResult> {
       continue;
     }
 
-    const dueDates = dueDatesBetween(plan.dayOfMonth, after, through);
+    const dueDates = dueDatesBetween(
+      plan.frequency,
+      plan.dayOfMonth,
+      plan.applyFrom,
+      after,
+      through,
+    );
     if (dueDates.length === 0) continue;
 
     const schemeCode = plan.instrument.externalId;
