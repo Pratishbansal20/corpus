@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Field, selectClass } from "@/components/forms/fields";
 import { FormDialog } from "@/components/forms/form-dialog";
@@ -7,10 +8,25 @@ import { saveSip } from "@/lib/sips/actions";
 import {
   SIP_FREQUENCY_LABELS,
   type SipBankView,
+  type SipFrequency,
   type SipView,
 } from "@/lib/sips/constants";
 
 const SOURCES = ["MANUAL", "GROWW", "PAYTM_MONEY", "INDMONEY"] as const;
+
+// dayOfMonth doubles as day-of-week for WEEKLY (0 Sun .. 6 Sat, JS's own
+// getUTCDay() convention — see lib/sips/schema.ts) so no separate column was
+// needed, but a 1–31 number input makes no sense for "which weekday": WEEKLY
+// gets its own picker instead, same underlying field.
+const WEEKDAYS = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
 
 export function SipDialog({
   initial,
@@ -23,12 +39,19 @@ export function SipDialog({
   label: string;
   banks?: SipBankView[];
 }) {
+  const [frequency, setFrequency] = useState<SipFrequency>(
+    initial?.frequency ?? "MONTHLY",
+  );
+  const [type, setType] = useState<"MUTUAL_FUND" | "IN_STOCK">(
+    initial?.instrumentType === "IN_STOCK" ? "IN_STOCK" : "MUTUAL_FUND",
+  );
+
   return (
     <FormDialog
       trigger={trigger}
       label={label}
       title={initial ? "Edit SIP" : "Add SIP"}
-      description="A recurring investment into a mutual fund."
+      description="A recurring investment into a mutual fund, stock, or ETF."
       submitLabel={initial ? "Save changes" : "Add SIP"}
       action={saveSip}
     >
@@ -36,18 +59,19 @@ export function SipDialog({
         <>
           {initial && <input type="hidden" name="id" value={initial.id} />}
           <div className="grid grid-cols-2 gap-3">
-            <Field
-              label="Fund symbol"
-              htmlFor="symbol"
-              error={state.fieldErrors?.symbol}
-            >
-              <Input
-                id="symbol"
-                name="symbol"
-                defaultValue={initial?.fundSymbol ?? ""}
-                placeholder="PPFAS_FLEXI"
-                autoComplete="off"
-              />
+            <Field label="Type" htmlFor="type">
+              <select
+                id="type"
+                name="type"
+                value={type}
+                onChange={(e) =>
+                  setType(e.target.value as "MUTUAL_FUND" | "IN_STOCK")
+                }
+                className={selectClass}
+              >
+                <option value="MUTUAL_FUND">Mutual fund</option>
+                <option value="IN_STOCK">Stock / ETF</option>
+              </select>
             </Field>
             <Field label="Source" htmlFor="source">
               <select
@@ -64,19 +88,42 @@ export function SipDialog({
               </select>
             </Field>
           </div>
-          <Field
-            label="Fund name"
-            htmlFor="name"
-            error={state.fieldErrors?.name}
-          >
-            <Input
-              id="name"
-              name="name"
-              defaultValue={initial?.fundName ?? ""}
-              placeholder="Parag Parikh Flexi Cap"
-              autoComplete="off"
-            />
-          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field
+              label={type === "IN_STOCK" ? "Ticker" : "Fund symbol"}
+              htmlFor="symbol"
+              error={state.fieldErrors?.symbol}
+            >
+              <Input
+                id="symbol"
+                name="symbol"
+                defaultValue={initial?.fundSymbol ?? ""}
+                placeholder={type === "IN_STOCK" ? "GOLDBEES" : "PPFAS_FLEXI"}
+                autoComplete="off"
+              />
+            </Field>
+            <Field
+              label={type === "IN_STOCK" ? "Name" : "Fund name"}
+              htmlFor="name"
+              error={state.fieldErrors?.name}
+            >
+              <Input
+                id="name"
+                name="name"
+                defaultValue={initial?.fundName ?? ""}
+                placeholder={
+                  type === "IN_STOCK" ? "UTI Gold ETF" : "Parag Parikh Flexi Cap"
+                }
+                autoComplete="off"
+              />
+            </Field>
+          </div>
+          {type === "IN_STOCK" && (
+            <p className="text-muted-foreground -mt-1 text-xs">
+              Units aren&apos;t auto-applied for stock/ETF SIPs yet — update
+              the holding by hand after each debit.
+            </p>
+          )}
           <div className="grid grid-cols-3 gap-3">
             <Field
               label="Amount (₹)"
@@ -97,7 +144,8 @@ export function SipDialog({
               <select
                 id="frequency"
                 name="frequency"
-                defaultValue={initial?.frequency ?? "MONTHLY"}
+                value={frequency}
+                onChange={(e) => setFrequency(e.target.value as SipFrequency)}
                 className={selectClass}
               >
                 {Object.entries(SIP_FREQUENCY_LABELS).map(([v, l]) => (
@@ -107,21 +155,56 @@ export function SipDialog({
                 ))}
               </select>
             </Field>
-            <Field
-              label="Day"
-              htmlFor="dayOfMonth"
-              error={state.fieldErrors?.dayOfMonth}
-            >
-              <Input
-                id="dayOfMonth"
-                name="dayOfMonth"
-                type="number"
-                min="1"
-                max="31"
-                defaultValue={initial?.dayOfMonth ?? ""}
-                placeholder="5"
-              />
-            </Field>
+            {frequency === "WEEKLY" ? (
+              <Field
+                label="Day of week"
+                htmlFor="dayOfMonth"
+                error={state.fieldErrors?.dayOfMonth}
+              >
+                <select
+                  id="dayOfMonth"
+                  name="dayOfMonth"
+                  defaultValue={
+                    initial?.frequency === "WEEKLY" ? initial.dayOfMonth : ""
+                  }
+                  className={selectClass}
+                >
+                  <option value="" disabled>
+                    Pick a day
+                  </option>
+                  {WEEKDAYS.map((label, i) => (
+                    <option key={i} value={i}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            ) : (
+              <Field
+                label="Day of month"
+                htmlFor="dayOfMonth"
+                error={state.fieldErrors?.dayOfMonth}
+                hint={
+                  frequency === "QUARTERLY"
+                    ? "Every 3rd month from when this plan is saved."
+                    : undefined
+                }
+              >
+                <Input
+                  id="dayOfMonth"
+                  name="dayOfMonth"
+                  type="number"
+                  min="1"
+                  max="31"
+                  defaultValue={
+                    initial && initial.frequency !== "WEEKLY"
+                      ? initial.dayOfMonth
+                      : ""
+                  }
+                  placeholder="5"
+                />
+              </Field>
+            )}
           </div>
           <Field
             label="Debit from"

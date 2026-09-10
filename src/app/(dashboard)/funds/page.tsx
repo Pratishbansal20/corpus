@@ -93,10 +93,10 @@ export default async function FundsPage() {
         <div>
           <p className="eyebrow">Returns</p>
           <p className={`num mt-1.5 text-lg ${pnlClass(analysis.totalReturnsInr)}`}>
-            {formatPct(analysis.totalReturnsPct)}
+            {formatSignedInr(analysis.totalReturnsInr)}
           </p>
           <p className={`num text-xs ${pnlClass(analysis.totalReturnsInr)}`}>
-            {formatSignedInr(analysis.totalReturnsInr)}
+            {formatPct(analysis.totalReturnsPct)}
           </p>
         </div>
         <div>
@@ -141,7 +141,13 @@ export default async function FundsPage() {
                     from {s.bankLabel}
                   </p>
                 )}
-                {s.lastApplied && <SipAppliedNote applied={s.lastApplied} />}
+                {s.lastApplied && (
+                  <SipAppliedNote
+                    applied={s.lastApplied}
+                    sipPlanId={s.id}
+                    fundName={s.fundName}
+                  />
+                )}
               </div>
             ))}
           </CardContent>
@@ -263,7 +269,10 @@ export default async function FundsPage() {
                   </div>
                   <div className="text-right">
                     <p className="num text-sm">{formatInr(f.valueInr)}</p>
-                    <p className={`num text-xs ${pnlClass(f.returnsInr)}`}>
+                    <p className={`num text-xs font-medium ${pnlClass(f.returnsInr)}`}>
+                      {formatSignedInr(f.returnsInr)}
+                    </p>
+                    <p className={`num text-[10px] ${pnlClass(f.returnsInr)}`}>
                       {formatPct(f.returnsPct)}
                     </p>
                   </div>

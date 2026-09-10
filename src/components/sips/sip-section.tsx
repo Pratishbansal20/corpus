@@ -43,7 +43,7 @@ export function SipSection({
             <CardDescription>
               {sips.length > 0
                 ? `${formatInr(monthly)} / month across ${sips.length} plan${sips.length > 1 ? "s" : ""}`
-                : "Track recurring mutual-fund investments."}
+                : "Track recurring fund, stock, and ETF investments."}
             </CardDescription>
           </div>
           <SipDialog trigger="primary" label="Add SIP" banks={banks} />
@@ -73,7 +73,13 @@ export function SipSection({
                     {sourceLabel(s.source)}
                     {s.bankLabel && <> · from {s.bankLabel}</>}
                   </div>
-                  {s.lastApplied && <SipAppliedNote applied={s.lastApplied} />}
+                  {s.lastApplied && (
+                    <SipAppliedNote
+                      applied={s.lastApplied}
+                      sipPlanId={s.id}
+                      fundName={s.fundName}
+                    />
+                  )}
                 </div>
                 <div className="flex items-center gap-1">
                   <div className="text-right">
