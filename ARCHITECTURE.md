@@ -375,6 +375,33 @@ change needed, just data. A fund with no computable rate omits the figure
 entirely rather than showing a placeholder, the same "never fabricate"
 contract every price provider already follows.
 
+**Shown as a real table on `/funds`, reusing `/holdings`'s own
+`HoldingsTable`/`HoldingView`**, not a parallel component: the Funds page
+also calls `getUserPortfolio()`, filters to `MUTUAL_FUND`, and merges in
+`xirrByWindow` — `HoldingsTable`'s `metric: "avgBuy" | "xirr"` prop swaps the
+Avg buy (LTP) column out for XIRR (positioned next to P/L, not in Avg buy's
+old slot — both columns sit in their original JSX order and only one ever
+renders, so the "reorder" falls out of conditional rendering rather than
+manual column-shuffling logic). Every other column, sorting rule, and action
+(Top up, Edit, Delete) is the identical code path a stock row uses.
+
+A trailing window (1M/3M/6M/1Y, plus "All" for since-inception — the same
+day-counts `lib/networth/trend-range.ts` already defines, reused rather than
+redefined) needs a NAV as of the window's *start*, not just today, to price
+whatever position already existed going into it — `lib/funds/xirr-window.ts`
+replays the Transaction ledger for the quantity, then
+`resolveNavAsOf()` (`resolveAllotmentNav()`'s mirror: nearest published NAV
+*before* a date, not after) prices it via the same `mfapi.in` history
+provider the SIP/top-up paths already use. `getCachedNavHistory()` wraps it
+in a 12h, cross-request, `globalThis`-scoped cache (chosen explicitly over
+local-`Price`-only, which can't reach back past 2026-06-29) so a `/funds`
+visit doesn't re-fetch seven funds' full history every time — degrades to
+the last good cached copy on a fetch failure, never blank. The combined
+stat above the table and the table's own per-fund column share one toggle
+state (`components/funds/fund-xirr-section.tsx`), not two independently
+driven controls — the same reasoning `PortfolioTrends` already settled for
+the net-worth/returns charts.
+
 ### UTC everywhere for calendar dates
 
 Every SIP/card due date is built with `Date.UTC(...)` and rendered with

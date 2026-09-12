@@ -9,13 +9,15 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { requireUser } from "@/lib/auth/require-user";
 import { getUserFundAnalysis } from "@/lib/funds/queries";
-import { getSipPlans, monthlySipTotal } from "@/lib/sips/queries";
+import { getUserPortfolio } from "@/lib/holdings/queries";
+import { getSipPlans, getSipBankOptions, monthlySipTotal } from "@/lib/sips/queries";
 import { formatInr, formatPct, formatSignedInr } from "@/lib/money";
 import { AllocationDonut } from "@/components/charts/allocation-donut";
 import { RefreshFundsButton } from "@/components/funds/refresh-funds-button";
 import { FundHoldingsList } from "@/components/funds/fund-holdings-list";
 import { OverlapMatrix } from "@/components/funds/overlap-matrix";
 import { SipAppliedNote } from "@/components/sips/sip-applied-note";
+import { FundXirrSection } from "@/components/funds/fund-xirr-section";
 
 const dateFmt = new Intl.DateTimeFormat("en-IN", {
   day: "numeric",
@@ -31,10 +33,38 @@ function pnlClass(value: number): string {
 
 export default async function FundsPage() {
   const user = await requireUser();
-  const [analysis, sips] = await Promise.all([
+  const [analysis, sips, portfolio, banks] = await Promise.all([
     getUserFundAnalysis(user.id),
     getSipPlans(user.id),
+    getUserPortfolio(user.id),
+    getSipBankOptions(user.id),
   ]);
+
+  // The same Holdings table Investments uses, filtered to mutual funds and
+  // re-scaled so Weight reads "% of your mutual funds" rather than "% of
+  // your whole portfolio" - reusing HoldingsTable/HoldingView as-is rather
+  // than a parallel row type; only XIRR (computed by getUserFundAnalysis,
+  // which already has the real Transaction-based cash flows per fund) and
+  // weight are merged in on top.
+  // HoldingView has no instrumentId, only symbol - but (type, symbol) is the
+  // Instrument's own unique key, and this map only ever holds MUTUAL_FUND
+  // rows on both sides, so symbol alone is an unambiguous join here.
+  const xirrBySymbol = new Map(
+    analysis.funds.map((f) => [f.symbol, f.xirrByWindow]),
+  );
+  const mfHoldingViews = portfolio.holdings.filter(
+    (h) => h.type === "MUTUAL_FUND",
+  );
+  const mfTotalValueInr = mfHoldingViews.reduce(
+    (a, h) => a + h.currentValueInr,
+    0,
+  );
+  const fundHoldingRows = mfHoldingViews.map((h) => ({
+    ...h,
+    xirrByWindow: xirrBySymbol.get(h.symbol) ?? null,
+    weightPct:
+      mfTotalValueInr > 0 ? (h.currentValueInr / mfTotalValueInr) * 100 : 0,
+  }));
 
   if (analysis.funds.length === 0) {
     return (
@@ -77,7 +107,7 @@ export default async function FundsPage() {
       </div>
 
       {/* Where you stand, before any analysis. */}
-      <section className="border-border grid grid-cols-2 gap-x-6 gap-y-6 border-y py-6 sm:grid-cols-5">
+      <section className="border-border grid grid-cols-2 gap-x-6 gap-y-6 border-y py-6 sm:grid-cols-4">
         <div>
           <p className="eyebrow">Invested</p>
           <p className="num mt-1.5 text-lg">
@@ -108,19 +138,21 @@ export default async function FundsPage() {
             </p>
           )}
         </div>
-        {analysis.totalMfXirrPct !== null && (
-          <div>
-            <p className="eyebrow">XIRR</p>
-            <p className={`num mt-1.5 text-lg ${pnlClass(analysis.totalMfXirrPct)}`}>
-              {formatPct(analysis.totalMfXirrPct)}
-            </p>
-            <p className="text-muted-foreground text-xs">
-              {analysis.fundsWithXirr} of {analysis.funds.length} fund
-              {analysis.funds.length > 1 ? "s" : ""}
-            </p>
-          </div>
-        )}
       </section>
+
+      {/* XIRR: a combined stat and the same per-holding table Investments
+          uses (filtered to mutual funds, XIRR standing in for Avg buy (LTP)
+          since a return figure belongs next to the other return figure, not
+          where a cost-basis figure used to sit), sharing one window toggle
+          so the two numbers can never show different periods. */}
+      <FundXirrSection
+        windows={analysis.xirrWindows}
+        totalByWindow={analysis.totalMfXirrByWindow}
+        fundsWithXirrByWindow={analysis.fundsWithXirrByWindow}
+        totalFunds={analysis.funds.length}
+        holdings={fundHoldingRows}
+        banks={banks}
+      />
 
       {/* Upcoming SIP dates, so the schedule lives beside the funds it feeds. */}
       {activeSips.length > 0 && (
@@ -287,13 +319,6 @@ export default async function FundsPage() {
                     <p className={`num text-[10px] ${pnlClass(f.returnsInr)}`}>
                       {formatPct(f.returnsPct)}
                     </p>
-                    {/* Omitted entirely, never a dash, when there's no real
-                        dated purchase history to compute a rate from. */}
-                    {f.xirrPct !== null && (
-                      <p className="text-muted-foreground num mt-1 text-[10px]">
-                        XIRR {formatPct(f.xirrPct)}
-                      </p>
-                    )}
                   </div>
                 </div>
               </CardHeader>

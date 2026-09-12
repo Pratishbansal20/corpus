@@ -159,3 +159,77 @@ export function resolveAllotmentNav(
 
   return { navDate, nav, lagDays };
 }
+
+/**
+ * The NAV that priced this fund on or immediately before `date` - "what was
+ * this position worth on this past day," the opposite direction from
+ * `resolveAllotmentNav`'s "what will a debit due on this day be priced at."
+ * Used to value a fund's position at the start of a trailing XIRR window
+ * (1M/6M/...), not just at allotment. Returns null when the fund's own
+ * published history doesn't reach back that far - a window older than the
+ * fund itself, which is common here (several of these are recent NFOs) - so
+ * the caller can report "not enough data" rather than guess.
+ */
+export function resolveNavAsOf(history: NavHistory, date: Date): AllotmentNav | null {
+  const target = isoDay(date);
+
+  // Binary search for the last published date <= target.
+  let lo = 0;
+  let hi = history.dates.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (history.dates[mid] <= target) lo = mid + 1;
+    else hi = mid;
+  }
+  const navDate = history.dates[lo - 1];
+  if (!navDate) return null; // the fund's history starts after `date`
+
+  const nav = history.navByDate.get(navDate);
+  if (nav === undefined) return null;
+
+  const lagDays = Math.round(
+    (Date.parse(`${target}T00:00:00Z`) - Date.parse(`${navDate}T00:00:00Z`)) /
+      86_400_000,
+  );
+  return { navDate, nav, lagDays };
+}
+
+type CachedHistory = { history: NavHistory; fetchedAt: number };
+
+// NAVs publish at most once a day, so a page load re-fetching a fund's full
+// history every single visit is pure waste - this is a cross-request,
+// process-lifetime cache (survives Next.js dev hot-reload the same way the
+// Prisma client singleton does; resets on a real redeploy, which is fine
+// since the next request just repopulates it). 12h, not 24h, so a fund's
+// figures aren't stuck showing yesterday's NAV for a full day after today's
+// actually publishes.
+const NAV_HISTORY_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+
+const globalForNavCache = globalThis as unknown as {
+  navHistoryCache?: Map<string, CachedHistory>;
+};
+const navHistoryCache =
+  globalForNavCache.navHistoryCache ?? new Map<string, CachedHistory>();
+globalForNavCache.navHistoryCache = navHistoryCache;
+
+/**
+ * `fetchNavHistory`, cached. On a fetch failure, degrades to the last good
+ * cached copy rather than failing outright - the same "last good, never
+ * blank" contract every price provider in this app already follows - and
+ * only returns null when there has never been a successful fetch at all.
+ */
+export async function getCachedNavHistory(
+  schemeCode: string,
+): Promise<NavHistory | null> {
+  const cached = navHistoryCache.get(schemeCode);
+  if (cached && Date.now() - cached.fetchedAt < NAV_HISTORY_CACHE_TTL_MS) {
+    return cached.history;
+  }
+  try {
+    const history = await fetchNavHistory(schemeCode);
+    navHistoryCache.set(schemeCode, { history, fetchedAt: Date.now() });
+    return history;
+  } catch {
+    return cached?.history ?? null;
+  }
+}

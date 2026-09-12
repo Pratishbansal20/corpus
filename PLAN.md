@@ -1075,3 +1075,73 @@ Verified: `tsc`, `eslint`, all 159 tests (148 + 11 new), `next build` all green.
 numbers checked against the live database with a throwaway script (mirroring
 `getUserFundAnalysis`'s exact logic) before trusting the wired-in version, not just
 inferred from green tests.
+
+### XIRR becomes a real table, with a trailing-window toggle (2026-09-13)
+
+Follow-up the same day: the per-card XIRR line was too scattered, and a single
+since-inception rate wasn't enough. Rebuilt as a proper table plus a 1M/3M/6M/1Y
+toggle, reusing as much of Investments as the shapes allow rather than a parallel
+fund-specific view.
+
+**The table is `HoldingsTable` itself**, not a lookalike. `funds/page.tsx` now also
+calls `getUserPortfolio()` (the same query `/holdings` uses), filters to
+`MUTUAL_FUND`, re-scales `weightPct` to "% of your mutual funds" instead of "% of
+your whole portfolio," and merges in `xirrByWindow` computed by
+`getUserFundAnalysis()`. `HoldingView` gained that field (always `null` from
+`buildPortfolio` - `/holdings` is completely unaffected, confirmed live: the page
+still shows Avg buy/LTP and zero XIRR references). `HoldingsTable` gained a
+`metric: "avgBuy" | "xirr"` prop: in `"xirr"` mode the Avg buy (LTP) column is
+gone entirely and XIRR renders instead **next to P/L**, not in Avg buy's old
+slot - achieved by literally leaving both columns in their original JSX source
+order and conditionally rendering each one, so only one ever mounts and the
+other's slot in the row just doesn't exist, no manual reordering logic needed.
+Sorting, the mobile card layout, and every action (Top up, Edit, Delete) are the
+exact same code path for a fund row as for a stock row - a mutual fund shown here
+is still a real `Holding`.
+
+**The trailing-window toggle needed real new math, not just a UI control.** A
+"6M XIRR" isn't "flows from the last 6 months" - it has to price whatever
+position already existed *going into* the window, or a fund bought a year ago
+and merely held flat for the last 6 months would show as if nothing happened.
+`lib/funds/xirr-window.ts` (pure, 10 new tests) replays the Transaction ledger
+to find the quantity held at the window's start, then needs a NAV as of that
+past date to value it - which the local `Price` table can't provide (it only
+starts 2026-06-29) but the existing `mfapi.in` NAV-history provider can, since
+it already serves years of data for exactly this kind of lookup (the SIP/top-up
+paths already use it, just walking the other direction in time).
+`resolveNavAsOf()` is `resolveAllotmentNav()`'s mirror: "the NAV on or before"
+instead of "on or after."
+
+**One cross-request cache, not one fetch per page view.** Asked directly before
+building: fetch NAV history live (accurate, adds latency) or use only local
+`Price` data (instant, but too short for anything past ~1M today)? Chose live
+fetch with a cache. `getCachedNavHistory()` is a `globalThis`-scoped `Map`
+keyed by scheme code with a 12h TTL - long enough that NAVs (which publish at
+most once a day) don't need re-fetching every visit, short enough that a stale
+figure doesn't sit for a full day. Degrades to the last good cached copy on a
+fetch failure rather than blanking out, the same contract every provider here
+already follows. Measured live: first `/funds` load after a code change (cold
+cache) took ~5.8s for the 7 parallel fetches; the very next load was ~1.3s.
+
+**Windows offered: 1M, 3M, 6M, 1Y, All** - a deliberate subset of the net-worth
+trend chart's own range list (`lib/networth/trend-range.ts`, reused rather than
+re-defining day counts), skipping 1W (too noisy to annualize) and 3Y/5Y (every
+fund held here is under 18 months old, so those would report "not enough data"
+for all seven today - pure clutter for zero payoff, though nothing in the math
+stops adding them once it'd actually show something).
+
+**One toggle, not two that could drift.** The combined "XIRR" stat above the
+table and the table's own per-fund column read the same selected window, owned
+by one new client component (`components/funds/fund-xirr-section.tsx`) rather
+than two independent controls - the exact reasoning `PortfolioTrends` already
+settled for the net-worth/returns charts, applied here on purpose rather than
+re-litigated.
+
+Verified end to end against the live app, not just the unit tests: seeded a
+temporary session, drove the real page in a real browser, screenshotted the
+default "All" view (combined +8.37%, matching the number from the previous
+entry exactly), clicked "3M," and confirmed both the combined stat (+11.90%)
+and every per-fund XIRR cell in the table recomputed correctly - JioBlackRock
+-8.82%, Bandhan +27.92%, Nippon +32.98%, and so on, each a sane trailing figure
+given how recently that fund's money actually went in. `tsc`, `eslint`, all
+169 tests (159 + 10 new), `next build` all green.

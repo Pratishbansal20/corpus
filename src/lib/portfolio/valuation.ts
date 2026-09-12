@@ -36,6 +36,15 @@ export type HoldingView = {
   pnlInr: number;
   pnlPct: number;
   weightPct: number;
+  // Always null here: buildPortfolio never computes it (XIRR needs the
+  // Transaction ledger, not just a Holding's cached quantity/avgBuyPrice).
+  // Deliberately typed as generic string keys, not lib/funds' own
+  // FundXirrWindow union - this module has no reason to depend on that
+  // domain's type. Present at all so a caller that does compute real values
+  // (lib/funds/queries.ts, for mutual funds only) can merge them onto the
+  // same HoldingView shape and reuse HoldingsTable as-is, rather than a
+  // parallel row type.
+  xirrByWindow: Record<string, number | null> | null;
 };
 
 export type PortfolioSummary = {
@@ -116,6 +125,7 @@ export function buildPortfolio(
     weightPct: totalValueInr.gt(ZERO)
       ? r.currentValueInr.div(totalValueInr).mul(HUNDRED).toNumber()
       : 0,
+    xirrByWindow: null,
   }));
 
   // Largest position first.
