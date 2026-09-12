@@ -1,36 +1,10 @@
 # Corpus: TODO
 
-_Last updated 2026-09-11. Ordered by what unblocks the most. `PLAN.md` holds the
+_Last updated 2026-09-13. Ordered by what unblocks the most. `PLAN.md` holds the
 history of what is already built and why._
 
 > **Working agreement:** nothing here gets executed without agreeing the approach
 > first. Pick an item, we settle how to do it, then it gets built.
-
----
-
-## 0. The one blocker
-
-**`Transaction` model.** Nothing in the database records *when* money was invested.
-`Holding` stores only `quantity` and `avgBuyPrice`, and `createdAt` is when the row was
-typed in. Four separate things are stuck behind this:
-
-- XIRR is a function of cash-flow dates, so it cannot be computed at all today
-- CSV import needs somewhere to put rows
-- Top-ups and SIP executions currently mutate the holding and record no date
-- Dividend tracking and capital-gains estimates have nowhere to live
-
-`userId, instrumentId, type (BUY/SELL/DIVIDEND), quantity, pricePerUnit, date, source`,
-with `Holding.quantity` and `avgBuyPrice` derived from it rather than stored by hand.
-Do not start XIRR before this lands.
-
-**Checked against a real CAS, not just assumed: the shape holds.** A real CAMS+KFintech
-Detailed CAS (7 pages, 7 AMCs, 17 folios) is staged at `data/cas-raw/` (gitignored — real
-PAN/address/mobile in it, never committed) for whenever this gets built. Every row in it
-carries `date`, `quantity`, `pricePerUnit` (internally consistent: amount ÷ units = price to
-3dp on every line checked) and a `type` cleanly readable off the transaction description
-("SIP Purchase", "Net Purchase via Online" → `BUY`; no `SELL`/`DIVIDEND` example was present
-in this particular document, so those string formats are still unconfirmed). Three real gaps
-to design for, not hypothetical: see "PDF / LLM holdings import" below.
 
 ---
 
@@ -77,12 +51,20 @@ today. Convert what we can, and surface anything else rather than silently dropp
 
 ## 3. Features
 
+✅ **XIRR, mutual funds only** — done 2026-09-13, see `PLAN.md`. Deliberately not
+per-holding on `/holdings`: every stock/ETF holding's only Transaction row is a
+fabricated-date opening-balance stub, so it stays out of XIRR entirely (no `—`
+placeholders in that table) until a real dated purchase exists for one. Lives on
+`/funds` instead — per-fund in each fund's card, one combined figure in the
+"Where you stand" row. `lib/portfolio/xirr.ts` is fully general (any asset class,
+any currency), so equities pick it up automatically the day they get real dates,
+no code change needed.
+
 | Item | Depends on |
 |---|---|
-| **XIRR**, per holding and portfolio-wide, with a backfill screen for existing positions | `Transaction` |
-| **CSV import** (`/import` is still a placeholder): upload, validate, preview, idempotent commit | `Transaction` |
-| **Dividend tracking** | `Transaction` |
-| **Capital gains and tax estimate** | `Transaction`, corporate actions |
+| **CSV import** (`/import` is still a placeholder): upload, validate, preview, idempotent commit | `Transaction` ✅ |
+| **Dividend tracking** | `Transaction` ✅ |
+| **Capital gains and tax estimate** | `Transaction` ✅, corporate actions |
 | **Benchmark comparison** against NIFTY and the S&P 500 | backfill |
 | **Goal tracking**: target net worth with a progress read | |
 | **Watchlist** | |
@@ -248,23 +230,29 @@ survives that layout variance without a bespoke parser per broker.
   for XIRR, but that path depends on `Transaction` landing first, same as CSV import.
 - Open question for build time: CAS PDFs are password-protected with a PAN-derived
   password, so the upload flow needs a password prompt, not just a file picker.
-- **Three real gaps, confirmed against an actual downloaded CAS, not guessed:**
-  1. **ISIN → `Instrument` resolution is unbuilt.** The CAS identifies a fund by ISIN and an
-     RTA-internal code (e.g. `GD340`), neither of which is the AMFI scheme code
-     `Instrument.externalId` is keyed on. `lib/instruments/search.ts` only searches by name
-     today; the importer needs an ISIN lookup path.
-  2. **`source` isn't in the document at all.** A CAS shows an Advisor/ARN distributor code
-     per folio (e.g. `INZ000240532`), never a literal broker name like "Groww" — resolving
-     that mapping needs a one-time question back to the user, not a guess embedded in the
-     parser.
-  3. **Real noise to filter, seen firsthand**: `*** Stamp Duty ***` lines (a fee, no units —
-     excluded from the amount/units/price identity check), `***Cancelled***` and
-     `***Address Updated...***` lines (pure noise), and legitimate same-day duplicate
-     installment numbers (two distinct transactions, not a dedupe target).
-  4. **One structural fact to design around**: a single holding routinely spans 2–3 folios
-     (different advisor code and/or demat vs. non-demat of the same scheme) — the importer
-     sums across folios into one `Holding` per (instrument, source), same as today, while
-     still writing one `Transaction` row per underlying folio-transaction.
+- **One CAMS/KFintech CAS was actually parsed and backfilled (2026-09-13, see
+  `PLAN.md`)** — narrower than this feature (no upload UI, no LLM, no preview/commit
+  step; a one-off script pointed at one exported statement) but it de-risked three of
+  the four gaps below for that one document shape specifically:
+  1. **ISIN → `Instrument` resolution.** `Instrument.isin` (unique, nullable) now
+     exists in the schema and is populated for every fund the backfill touched.
+     Still not a *general* resolver, though: `lib/instruments/search.ts` only searches
+     by name, and the backfill script's ISIN→symbol mapping is hardcoded for the 7
+     funds it already knew about, not a real lookup path a future importer could call.
+  2. **`source` per folio turned out to be a non-issue this time**, not solved in
+     general: every folio in the one real CAS checked happened to already be the same
+     broker (GROWW), so no mapping question was needed. A CAS spanning multiple
+     brokers still needs the one-time question back to the user this item originally
+     described.
+  3. **Real noise, now actually handled and tested**, not just observed: `*** Stamp
+     Duty ***`, `***Cancelled***`, `***Address Updated...***` lines, and — confirmed
+     for real, not hypothetical — a registrar legitimately posting two separate
+     purchases on the same folio/date/description/amount (`lib/imports/cas-cams-kfintech.ts`,
+     regression-tested).
+  4. **Multi-folio → one Holding, exercised for real**: several of the 7 funds backfilled
+     spanned 2–3 folios each, summed into the existing single `Holding` per
+     (instrument, source) while each underlying folio-transaction got its own
+     `Transaction` row, exactly as this item originally proposed.
 - **No single CAS is complete.** Confirmed independently (see "why is my CAS missing
   folios" — a folio only appears if its email matches the one the CAS was pulled for): the
   importer should expect to merge multiple CAS pulls (different emails) and broker exports

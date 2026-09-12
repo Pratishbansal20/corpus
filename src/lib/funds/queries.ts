@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db/prisma";
+import { computeXirr, isTrustworthyDateSource, type CashFlow } from "@/lib/portfolio/xirr";
 import {
   companyWeightage,
   sectorWeightage,
@@ -20,6 +21,10 @@ export type FundView = {
   constituents: { stock: string; sector: string; weightPct: number }[];
   coveragePct: number; // Σ of disclosed weights: how much of the fund we have data for
   asOf: string | null;
+  // null when this fund has no dated purchase history to compute a rate
+  // from, or any of it is untrustworthy (a hand-typed entry, an
+  // opening-balance stub) - never a fabricated-looking number.
+  xirrPct: number | null;
 };
 
 export type FundAnalysis = {
@@ -32,6 +37,11 @@ export type FundAnalysis = {
   companies: CompanyExposure[];
   sectors: SectorExposure[];
   overlaps: OverlapPair[];
+  // Combined XIRR across every fund whose own XIRR could be computed. Not
+  // "the portfolio's mutual-fund XIRR" outright when some funds are
+  // excluded - fundsWithXirr says how many actually went in.
+  totalMfXirrPct: number | null;
+  fundsWithXirr: number;
 };
 
 export async function getUserFundAnalysis(userId: string): Promise<FundAnalysis> {
@@ -96,6 +106,47 @@ export async function getUserFundAnalysis(userId: string): Promise<FundAnalysis>
     constituentsByFund.set(r.instrumentId, list);
   }
 
+  // XIRR: real dated cash flows only, mutual funds only (see
+  // lib/portfolio/xirr.ts - the algorithm is general, this app just doesn't
+  // trust equity holdings' dates yet, all of which currently trace back to a
+  // single fabricated-date opening-balance stub, not a real purchase date).
+  // Grouped by instrumentId, not by individual holding: a fund's Transaction
+  // rows sum across however many Holdings actually hold it, the same way its
+  // value and cost basis already do above.
+  const holdingIds = mfHoldings.map((h) => h.id);
+  const mfTransactions = holdingIds.length
+    ? await prisma.transaction.findMany({
+        where: { holdingId: { in: holdingIds } },
+        orderBy: { date: "asc" },
+      })
+    : [];
+  const cashFlowsByInstrument = new Map<string, CashFlow[]>();
+  const untrustworthyInstruments = new Set<string>();
+  for (const t of mfTransactions) {
+    if (!isTrustworthyDateSource(t.source)) {
+      untrustworthyInstruments.add(t.instrumentId);
+      continue;
+    }
+    const signedAmount =
+      t.type === "BUY" ? -t.amount.toNumber() : t.amount.toNumber();
+    const list = cashFlowsByInstrument.get(t.instrumentId) ?? [];
+    list.push({ date: t.date, amount: signedAmount });
+    cashFlowsByInstrument.set(t.instrumentId, list);
+  }
+
+  const today = new Date();
+  function xirrForInstrument(instrumentId: string): number | null {
+    if (untrustworthyInstruments.has(instrumentId)) return null;
+    const flows = cashFlowsByInstrument.get(instrumentId);
+    if (!flows || flows.length === 0) return null;
+    const withCurrentValue: CashFlow[] = [
+      ...flows,
+      { date: today, amount: valueByInstrument.get(instrumentId) ?? 0 },
+    ];
+    const rate = computeXirr(withCurrentValue);
+    return rate === null ? null : rate * 100;
+  }
+
   // Build per-fund views (unique instruments).
   const seen = new Set<string>();
   const funds: FundView[] = [];
@@ -121,9 +172,22 @@ export async function getUserFundAnalysis(userId: string): Promise<FundAnalysis>
       asOf: latestAsOf.has(h.instrumentId)
         ? new Date(latestAsOf.get(h.instrumentId)!).toISOString()
         : null,
+      xirrPct: xirrForInstrument(h.instrumentId),
     });
   }
   funds.sort((a, b) => b.valueInr - a.valueInr);
+
+  // Combined XIRR across every fund whose own XIRR was computable - each
+  // fund's flows already carry its own current-value flow, so concatenating
+  // them is enough; XIRR doesn't care how many distinct flows share a date.
+  const eligibleInstrumentIds = [...cashFlowsByInstrument.keys()].filter(
+    (id) => !untrustworthyInstruments.has(id),
+  );
+  const combinedFlows = eligibleInstrumentIds.flatMap((id) => [
+    ...cashFlowsByInstrument.get(id)!,
+    { date: today, amount: valueByInstrument.get(id) ?? 0 },
+  ]);
+  const totalMfXirr = computeXirr(combinedFlows);
 
   const totalMfValueInr = funds.reduce((a, f) => a + f.valueInr, 0);
   const totalMfInvestedInr = funds.reduce((a, f) => a + f.investedInr, 0);
@@ -150,5 +214,7 @@ export async function getUserFundAnalysis(userId: string): Promise<FundAnalysis>
     companies: companyWeightage(withData),
     sectors: sectorWeightage(withData),
     overlaps: overlapMatrix(withData),
+    totalMfXirrPct: totalMfXirr === null ? null : totalMfXirr * 100,
+    fundsWithXirr: eligibleInstrumentIds.length,
   };
 }

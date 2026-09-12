@@ -116,6 +116,9 @@ src/
     security/totp.ts             TOTP passphrase-recovery secret generation/verification
     mark.tsx                     the brand mark's geometry, as both data and JSX components
     db/prisma.ts                 the one PrismaClient singleton
+    db/seed-portfolio.ts, backfill-cas-transactions.ts   one-off scripts, run via jiti, not the app
+    transactions/record.ts       the one place every action writes a Transaction row from
+    imports/cas-cams-kfintech.ts CAMS/KFintech CAS parser: pure text in, structured rows out
     crypto/encryption.ts         AES-256-GCM field encryption
   generated/prisma/              Prisma client output, gitignored
 ```
@@ -142,10 +145,13 @@ erDiagram
     User ||--o| UserSecurity : "passphrase"
 
     Instrument ||--o{ Holding : "priced by"
+    Instrument ||--o{ Transaction : "priced by"
     Instrument ||--o{ Price : "time series"
     Instrument ||--o{ FundHolding : "constituents (if MF)"
     Instrument ||--o{ SipPlan : "target fund"
 
+    User ||--o{ Transaction : owns
+    Holding ||--o{ Transaction : "cash-flow history"
     SipPlan ||--o{ SipExecution : "applied debits"
     BankAccount ||--o{ SipPlan : "debits from"
     BankAccount ||--o{ SipExecution : "cash left from"
@@ -156,13 +162,24 @@ fetch serves everyone, which matters once this stops being single-user. A
 mutual fund's real identity is its AMFI scheme code (`externalId`), not its
 symbol: the seeded funds carry hand-made symbols like `JIOBR_FLEXI` while
 search offers `MF153859` for the same scheme, so instrument resolution
-matches on scheme code first and falls back to `(type, symbol)`.
+matches on scheme code first and falls back to `(type, symbol)`. `isin`
+(2026-09-13) is a third key, needed only for resolving a CAS/broker-export
+import, which identifies a fund by ISIN, never by scheme code or symbol.
 
-**`Holding` stores `quantity` and `avgBuyPrice` directly**, hand-maintained.
-It does not record *when* a purchase happened, only `createdAt`, which is
-when the row was typed in, not when the money moved. That's the single
-biggest gap in the schema today: it blocks XIRR, CSV import, and dividend
-tracking. See [`TODO.md`](TODO.md) → the `Transaction` model.
+**`Holding` stores `quantity` and `avgBuyPrice` directly**, but as a
+*maintained cache* now, not the only record: every write path that changes
+either column (manual entry, top-up, SIP auto-apply) writes a matching
+`Transaction` row in the same DB transaction, so the two can never drift
+apart. `Transaction` is the ledger `Holding` never had — `type`
+(`BUY`/`SELL`/`DIVIDEND`), `quantity`, `pricePerUnit`, `amount`/`fees` (native
+currency, matching `Holding.avgBuyPrice`), and `date` (when the money
+actually moved, never `createdAt`) — which is what XIRR, CSV import, and
+dividend tracking were blocked on. `source`/`folio`/`importRef` exist for
+imports specifically: `importRef` makes re-running an import idempotent,
+`folio` is audit display only, never a join key. See
+[`lib/imports/cas-cams-kfintech.ts`](../src/lib/imports/cas-cams-kfintech.ts)
+and the backfill note below for how the existing mutual-fund holdings got
+their real history.
 
 **`SipExecution`** is the audit trail and the idempotency guard for automatic
 purchases in one row: unique on `(sipPlanId, dueDate)`, so a cron that runs
@@ -271,6 +288,92 @@ either both writes commit or neither does. The account is optional
 (`bankAccountId` on `SipPlan`), and which account paid is recorded per
 `SipExecution` rather than read back off the current plan, so re-pointing a
 SIP at a different bank later can't rewrite where past debits came from.
+
+### The Transaction ledger: a cache in front, a real history underneath
+
+`Holding.quantity`/`avgBuyPrice` stay exactly as every existing read path
+(`valuation.ts`, `consolidation.ts`, every dashboard query) already expects
+them — a maintained cache, not something to derive on every read. What
+changed is that nothing may update either column anymore without also
+writing a `Transaction` row describing the same event, in the same
+`$transaction`: `createHolding` (only on genuinely creating a new position,
+not on colliding with an existing one, which behaves like a correction and
+gets none), `topUpHolding`, and `applyOneDebit`. A SIP reversal deletes its
+matching `Transaction` (found by `importRef: "SIP_EXEC:<executionId>"`)
+rather than writing a compensating row: unlike `SipExecution.reversedAt`,
+`Transaction` has no idempotency-cursor job that a soft-delete would need to
+preserve, so the honest ledger fact — this purchase never really settled —
+is that the row is gone, not present-but-flagged for every future consumer
+to remember to filter.
+
+**Backfill: the CAS is real history for 7 mutual funds, nothing else.**
+A CAMS/KFintech Consolidated Account Statement lists every real purchase
+across every folio, so `lib/imports/cas-cams-kfintech.ts` parses its fixed
+tabular layout (regex-based — the format is rigid enough that an LLM pass
+isn't needed here, unlike a broker's own inconsistently-shaped holdings
+export) into transactions and per-folio closing balances. `data/cas-raw/` is
+gitignored (real PAN/address/mobile in the source PDF); the parser itself
+takes plain extracted text and has no Prisma import, so it's unit-tested
+against a fabricated fixture rather than the real file.
+
+Two real parsing gotchas, both confirmed against the actual statement:
+a noise line (`*** Stamp Duty ***`, `***Cancelled***`, `***Address
+Updated...***`) carries the same leading date as a real purchase line, and a
+registrar can legitimately post two separate purchases on the same folio,
+date, description *and* amount (two SIP instalments processed together) —
+distinguishing them needs the line's own trailing running-unit-balance
+column, not just the four fields that usually make a row unique.
+
+The backfill script (`lib/db/backfill-cas-transactions.ts`, one-off, run via
+`jiti` since the repo has no `ts-node`/`tsx`) is idempotent: every row's
+`importRef` is the CAS line itself, so re-running it is a no-op on rows
+already written. It never touches `Holding` for a fund that already
+reconciles against the CAS (5 of 7 did, exactly); it does for the two that
+didn't — Bandhan Small Cap and JioBlackRock Flexi Cap were overstated by
+8.664 and 49.622 units respectively, because their `SipPlan.amountInr` was
+lowered at the broker without the app being told, so the cron kept
+auto-applying the old, higher amount and buying units that were never really
+purchased. The CAS was taken as ground truth on explicit direction and both
+`Holding` rows were corrected down to exactly what it shows. The first
+write-up here guessed the cause was a stale `SipPlan.amountInr`; checked
+against the live plans afterward and that wasn't it — both were already at
+the right amount. The actual mechanism behind the original drift is
+unconfirmed (most likely the original manual-reconciliation baseline itself
+was a little high); the corrected `Holding` figures are what matter.
+
+Every non-mutual-fund holding (34 stock/ETF positions, no source document
+for any of them in this repo) got one `OPENING_BALANCE` `Transaction`
+instead: quantity/price exactly as currently held, dated at the holding's
+own `createdAt`, clearly source-tagged as not a real purchase date. This
+exists so a future consumer summing `Transaction` never has to special-case
+"a holding with zero rows" — it can instead special-case "a row that starts
+with `OPENING_BALANCE`," which is honest about what it actually is.
+
+**`Transaction.holdingId`**, not just `instrumentId`: several instruments
+here sit under two different Holdings at once (HDFC Bank, Wipro, ITC, IOB,
+Tata Motors and TMPV, each held via both GROWW and PAYTM_MONEY), and a
+per-holding reader grouping by instrument alone would silently merge two
+unrelated cash-flow streams the day either side got real dated history.
+Nullable, `onDelete: SetNull`, so deleting a `Holding` never deletes its own
+transaction history. `createHolding`'s own row is tagged `"MANUAL_ENTRY"`
+rather than the broker name it used to carry, consistent with every other
+writer's pipeline tag (`SIP`, `TOPUP`, `CAS_IMPORT`, `OPENING_BALANCE`) and
+distinguishable from a trustworthy source — its date is exactly as
+fabricated as `OPENING_BALANCE`'s (today, since the form collects no date at
+all), so it needed the same honest tag.
+
+**XIRR (`lib/portfolio/xirr.ts`)** is pure, general, currency-agnostic math —
+Newton-Raphson with a bisection fallback over dated, signed cash flows — and
+does not know or care what asset class fed it. What limits it to mutual
+funds today, shown on `/funds` rather than `/holdings`, is a data-quality
+gate (`isTrustworthyDateSource()`), not an asset-class rule: every stock/ETF
+holding's only transaction is the fabricated-date `OPENING_BALANCE` stub
+above, and a rate computed from a made-up date is worse than showing
+nothing. An equity holding becomes eligible automatically the day it gets
+one real dated transaction (a dated top-up, a future import) — no code
+change needed, just data. A fund with no computable rate omits the figure
+entirely rather than showing a placeholder, the same "never fabricate"
+contract every price provider already follows.
 
 ### UTC everywhere for calendar dates
 

@@ -97,8 +97,22 @@ export async function reverseSipExecution(
       });
     }
 
-    // The row stays — see the module comment on SipExecution.reversedAt in
-    // schema.prisma for why this isn't a delete.
+    // The SipExecution row stays — see the module comment on
+    // SipExecution.reversedAt in schema.prisma for why this isn't a delete:
+    // it's still both the audit trail and the cron's idempotency cursor.
+    // Transaction has no such second job, so its row for this exact debit
+    // (tied by importRef, not by amount/date matching) is removed outright:
+    // the honest ledger fact is that this purchase never really settled, and
+    // a future sum over Transaction (XIRR, "total invested") should not need
+    // to know to skip a reversed-but-still-present row.
+    await tx.transaction.deleteMany({
+      where: {
+        userId: plan.userId,
+        instrumentId: plan.instrumentId,
+        importRef: `SIP_EXEC:${latest.id}`,
+      },
+    });
+
     await tx.sipExecution.update({
       where: { id: latest.id },
       data: { reversedAt: new Date() },

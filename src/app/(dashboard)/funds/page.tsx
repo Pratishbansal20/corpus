@@ -77,7 +77,7 @@ export default async function FundsPage() {
       </div>
 
       {/* Where you stand, before any analysis. */}
-      <section className="border-border grid grid-cols-2 gap-x-6 gap-y-6 border-y py-6 sm:grid-cols-4">
+      <section className="border-border grid grid-cols-2 gap-x-6 gap-y-6 border-y py-6 sm:grid-cols-5">
         <div>
           <p className="eyebrow">Invested</p>
           <p className="num mt-1.5 text-lg">
@@ -108,6 +108,18 @@ export default async function FundsPage() {
             </p>
           )}
         </div>
+        {analysis.totalMfXirrPct !== null && (
+          <div>
+            <p className="eyebrow">XIRR</p>
+            <p className={`num mt-1.5 text-lg ${pnlClass(analysis.totalMfXirrPct)}`}>
+              {formatPct(analysis.totalMfXirrPct)}
+            </p>
+            <p className="text-muted-foreground text-xs">
+              {analysis.fundsWithXirr} of {analysis.funds.length} fund
+              {analysis.funds.length > 1 ? "s" : ""}
+            </p>
+          </div>
+        )}
       </section>
 
       {/* Upcoming SIP dates, so the schedule lives beside the funds it feeds. */}
@@ -275,6 +287,13 @@ export default async function FundsPage() {
                     <p className={`num text-[10px] ${pnlClass(f.returnsInr)}`}>
                       {formatPct(f.returnsPct)}
                     </p>
+                    {/* Omitted entirely, never a dash, when there's no real
+                        dated purchase history to compute a rate from. */}
+                    {f.xirrPct !== null && (
+                      <p className="text-muted-foreground num mt-1 text-[10px]">
+                        XIRR {formatPct(f.xirrPct)}
+                      </p>
+                    )}
                   </div>
                 </div>
               </CardHeader>
