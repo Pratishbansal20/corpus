@@ -26,6 +26,7 @@ model User {
   accounts     Account[]
   sessions     Session[]
   holdings     Holding[]
+  transactions Transaction[]
   snapshots    PortfolioSnapshot[]
   bankAccounts BankAccount[]
   creditCards  CreditCard[]
@@ -97,8 +98,13 @@ model Instrument {
   country   Country
   currency  String // ISO 4217 of the instrument's native price, e.g. "INR", "USD"
   externalId String? // source-specific id (AMFI scheme code, exchange ticker, etc.)
+  // ISIN, when known. A CAS/broker-export import identifies a mutual fund by
+  // ISIN, not by AMFI scheme code or symbol, so resolution needs this as a
+  // second key: externalId (scheme code) first, then isin, then (type, symbol).
+  isin      String? @unique
 
   holdings     Holding[]
+  transactions Transaction[]
   prices       Price[]
   sipPlans     SipPlan[]
   fundHoldings FundHolding[]
@@ -137,11 +143,68 @@ model Holding {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  instrument Instrument @relation(fields: [instrumentId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  instrument   Instrument    @relation(fields: [instrumentId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
 
   @@unique([userId, instrumentId, source])
   @@index([userId])
+}
+
+enum TransactionType {
+  BUY
+  SELL
+  DIVIDEND
+}
+
+// The ledger Holding never had. Holding.quantity/avgBuyPrice stay as a
+// maintained cache (every write path updates both in the same DB
+// transaction), so every existing read of Holding is unaffected; Transaction
+// is the audit trail underneath, the same shape SipExecution already is for
+// SipPlan. date is when money actually moved (trade/allotment date), never
+// createdAt (when the row was typed in) - that distinction is the entire
+// reason this model exists: XIRR needs cash-flow dates, not entry dates.
+//
+// quantity/pricePerUnit/amount/fees are all in the instrument's native
+// currency, matching Holding.avgBuyPrice and Price.price - deliberately not
+// "...Inr"-suffixed like SipExecution/PortfolioSnapshot, because those are
+// always-INR bank-side records and this generalizes over US_STOCK too.
+model Transaction {
+  id           String          @id @default(cuid())
+  userId       String
+  instrumentId String
+  // Which specific Holding this belongs to, not just which Instrument: the
+  // same instrument routinely sits under two different (userId, instrumentId,
+  // source) Holdings at once (HDFC Bank held via both GROWW and PAYTM_MONEY
+  // is a real example here), and a per-holding read (XIRR, a future
+  // transaction history view) must not silently merge their cash flows.
+  // Nullable + SetNull so deleting a Holding never deletes its own history.
+  holdingId    String?
+  type         TransactionType @default(BUY)
+  quantity     Decimal         @db.Decimal(20, 6)
+  // Null only for a cash DIVIDEND, which has no natural per-unit price.
+  pricePerUnit Decimal?        @db.Decimal(20, 6)
+  amount       Decimal         @db.Decimal(20, 2) // cash that moved, native currency
+  // Stamp duty etc. Recorded for completeness only: never folded into the
+  // blended-average math, same as the app has always treated it.
+  fees         Decimal         @db.Decimal(20, 2) @default(0)
+  date         DateTime // UTC midnight, matching every other date in the app
+  source       String          @default("MANUAL") // "MANUAL", "TOPUP", "SIP", "CAS_IMPORT", "OPENING_BALANCE", ...
+  folio        String? // CAS/broker folio number, when known - audit display only, never a join key
+  // Idempotency key for an importer: re-running the same import is a no-op
+  // rather than a duplicate. Null for rows written by ordinary app actions,
+  // which already have their own idempotency (SipExecution's unique key, etc).
+  importRef    String?
+  notes        String?
+  createdAt    DateTime        @default(now())
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  instrument Instrument @relation(fields: [instrumentId], references: [id], onDelete: Cascade)
+  holding    Holding?   @relation(fields: [holdingId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, instrumentId, source, importRef])
+  @@index([userId, instrumentId, date])
+  @@index([holdingId])
 }
 
 // Time-series of prices for an instrument; the latest row is the current price.

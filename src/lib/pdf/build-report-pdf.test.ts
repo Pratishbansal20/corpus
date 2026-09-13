@@ -36,6 +36,7 @@ function baseData(overrides: Partial<ExportReportData> = {}): ExportReportData {
           pnlInr: 1_000,
           pnlPct: 6.67,
           weightPct: 100,
+          xirrByWindow: null,
         },
       ],
       summary: {
@@ -152,6 +153,7 @@ describe("buildReportPdf", () => {
       pnlInr: 100,
       pnlPct: 10,
       weightPct: 100 / 60,
+      xirrByWindow: null,
     }));
     const bytes = buildReportPdf(
       baseData({

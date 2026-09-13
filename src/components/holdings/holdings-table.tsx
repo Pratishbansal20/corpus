@@ -38,7 +38,14 @@ function pnlClass(value: number): string {
   return "text-muted-foreground";
 }
 
-type SortField = "name" | "source" | "quantity" | "value" | "pnl" | "weight";
+type SortField =
+  | "name"
+  | "source"
+  | "quantity"
+  | "value"
+  | "pnl"
+  | "weight"
+  | "xirr";
 type SortOrder = "asc" | "desc";
 
 function SortHeader({
@@ -67,12 +74,37 @@ function SortHeader({
 export function HoldingsTable({
   holdings: initialHoldings,
   banks = [],
+  // "avgBuy" (default): the Investments-page column set, unchanged.
+  // "xirr": the Funds-page variant - the Avg buy (LTP) column swaps out for
+  // XIRR, positioned next to P/L (a return figure belongs beside the other
+  // return figure, not where a cost-basis figure used to sit) rather than in
+  // the same slot Avg buy occupied. Everything else - sorting, actions,
+  // mobile card layout - is the exact same component, on purpose: a mutual
+  // fund shown here is still a real Holding, editable and top-up-able the
+  // same way.
+  metric = "avgBuy",
+  // Which key to read out of each row's xirrByWindow map. Owned by the
+  // caller (lib/funds' FundXirrSection), not this component: a toggle here
+  // and a separate one on a summary stat above it could drift apart, the
+  // same reasoning PortfolioTrends already settled on for its own range
+  // picker governing two charts at once. Ignored when metric is "avgBuy".
+  xirrWindow,
 }: {
   holdings: HoldingView[];
   banks?: SipBankView[];
+  metric?: "avgBuy" | "xirr";
+  xirrWindow?: string;
 }) {
   const [sortField, setSortField] = React.useState<SortField>("weight");
   const [sortOrder, setSortOrder] = React.useState<SortOrder>("desc");
+
+  const xirrPct = React.useCallback(
+    (h: HoldingView): number | null => {
+      if (!xirrWindow || !h.xirrByWindow) return null;
+      return h.xirrByWindow[xirrWindow] ?? null;
+    },
+    [xirrWindow],
+  );
 
   const sortedHoldings = React.useMemo(() => {
     return [...initialHoldings].sort((a, b) => {
@@ -104,13 +136,19 @@ export function HoldingsTable({
           valA = a.weightPct;
           valB = b.weightPct;
           break;
+        case "xirr":
+          // Missing/unavailable sinks to the bottom rather than erroring or
+          // sorting arbitrarily among nulls.
+          valA = xirrPct(a) ?? -Infinity;
+          valB = xirrPct(b) ?? -Infinity;
+          break;
       }
 
       if (valA < valB) return sortOrder === "asc" ? -1 : 1;
       if (valA > valB) return sortOrder === "asc" ? 1 : -1;
       return 0;
     });
-  }, [initialHoldings, sortField, sortOrder]);
+  }, [initialHoldings, sortField, sortOrder, xirrPct]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -142,6 +180,12 @@ export function HoldingsTable({
           <option value="value:desc">Sort: Value (high to low)</option>
           <option value="pnl:desc">Sort: P/L (best first)</option>
           <option value="pnl:asc">Sort: P/L (worst first)</option>
+          {metric === "xirr" && (
+            <>
+              <option value="xirr:desc">Sort: XIRR (best first)</option>
+              <option value="xirr:asc">Sort: XIRR (worst first)</option>
+            </>
+          )}
           <option value="name:asc">Sort: Name (A–Z)</option>
           <option value="source:asc">Sort: Source</option>
         </select>
@@ -180,12 +224,22 @@ export function HoldingsTable({
 
               <div className="text-muted-foreground mt-3 flex justify-between text-xs">
                 <span>
-                  Qty {formatQuantity(h.quantity)} · Avg{" "}
-                  {formatNative(h.avgBuyPrice, h.currency)}
-                  {h.hasLivePrice &&
-                    ` (${formatNative(h.currentPrice, h.currency)})`}
+                  Qty {formatQuantity(h.quantity)}
+                  {metric === "avgBuy" ? (
+                    <>
+                      {" "}
+                      · Avg {formatNative(h.avgBuyPrice, h.currency)}
+                      {h.hasLivePrice &&
+                        ` (${formatNative(h.currentPrice, h.currency)})`}
+                    </>
+                  ) : (
+                    <> · XIRR {xirrPct(h) === null ? "—" : formatPct(xirrPct(h)!)}</>
+                  )}
                 </span>
-                <span>{h.weightPct.toFixed(1)}% of portfolio</span>
+                <span>
+                  {h.weightPct.toFixed(1)}%{" "}
+                  {metric === "avgBuy" ? "of portfolio" : "of funds"}
+                </span>
               </div>
 
               <div className="mt-2 flex items-end justify-between">
@@ -247,13 +301,20 @@ export function HoldingsTable({
             <TableHead className="text-right">
               <SortHeader field="quantity" activeField={sortField} onSort={handleSort}>Qty</SortHeader>
             </TableHead>
-            <TableHead className="text-right">Avg buy (LTP)</TableHead>
+            {metric === "avgBuy" && (
+              <TableHead className="text-right">Avg buy (LTP)</TableHead>
+            )}
             <TableHead className="text-right">
               <SortHeader field="value" activeField={sortField} onSort={handleSort}>Value (Invested)</SortHeader>
             </TableHead>
             <TableHead className="text-right">
               <SortHeader field="pnl" activeField={sortField} onSort={handleSort}>P/L</SortHeader>
             </TableHead>
+            {metric === "xirr" && (
+              <TableHead className="text-right">
+                <SortHeader field="xirr" activeField={sortField} onSort={handleSort}>XIRR</SortHeader>
+              </TableHead>
+            )}
             <TableHead className="text-right">
               <SortHeader field="weight" activeField={sortField} onSort={handleSort}>Weight</SortHeader>
             </TableHead>
@@ -282,14 +343,16 @@ export function HoldingsTable({
               <TableCell className="text-right num">
                 {formatQuantity(h.quantity)}
               </TableCell>
-              <TableCell className="text-right num">
-                <div>{formatNative(h.avgBuyPrice, h.currency)}</div>
-                {h.hasLivePrice && (
-                  <div className="text-muted-foreground text-[10px]">
-                    ({formatNative(h.currentPrice, h.currency)})
-                  </div>
-                )}
-              </TableCell>
+              {metric === "avgBuy" && (
+                <TableCell className="text-right num">
+                  <div>{formatNative(h.avgBuyPrice, h.currency)}</div>
+                  {h.hasLivePrice && (
+                    <div className="text-muted-foreground text-[10px]">
+                      ({formatNative(h.currentPrice, h.currency)})
+                    </div>
+                  )}
+                </TableCell>
+              )}
               <TableCell className="text-right num">
                 <div>{formatInr(h.currentValueInr)}</div>
                 {h.hasLivePrice ? (
@@ -306,6 +369,13 @@ export function HoldingsTable({
                 <div>{formatSignedInr(h.pnlInr)}</div>
                 <div className="text-xs">{formatPct(h.pnlPct)}</div>
               </TableCell>
+              {metric === "xirr" && (
+                <TableCell
+                  className={`text-right num ${xirrPct(h) === null ? "text-muted-foreground" : pnlClass(xirrPct(h)!)}`}
+                >
+                  {xirrPct(h) === null ? "—" : formatPct(xirrPct(h)!)}
+                </TableCell>
+              )}
               <TableCell className="text-muted-foreground text-right num">
                 {h.weightPct.toFixed(1)}%
               </TableCell>

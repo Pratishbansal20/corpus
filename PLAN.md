@@ -921,3 +921,227 @@ exact pre-debit values, a second reversal attempt on the same execution was corr
 refused, and everything was deleted afterward. Checked live on the real account too: the
 funds page's "Applied ... · Reverse" line renders correctly against real SIP data.
 `tsc`, `eslint`, all 139 tests, `next build` all green.
+
+### The `Transaction` model, wired in and backfilled from a real CAS (2026-09-13)
+
+TODO's long-standing "one blocker," closed. `Transaction` (`userId, instrumentId, type
+BUY/SELL/DIVIDEND, quantity, pricePerUnit, amount, fees, date, source, folio, importRef`)
+is the ledger `Holding` never had. `Holding.quantity`/`avgBuyPrice` stay exactly as every
+existing read path expects them — a maintained cache, decided over deriving them on every
+read specifically to touch zero lines in `valuation.ts`/`consolidation.ts`/every dashboard
+query. `quantity`/`pricePerUnit`/`amount`/`fees` are in the instrument's native currency,
+matching `Holding.avgBuyPrice` and `Price.price` — deliberately not `...Inr`-suffixed like
+`SipExecution`/`PortfolioSnapshot`, which are always-INR bank-side records; this one has to
+generalize over `US_STOCK` too. `Instrument` gained `isin` (unique, nullable) alongside
+`externalId`, since a CAS/broker export identifies a fund by ISIN, never by AMFI scheme
+code or symbol.
+
+**Wired into every path that already touches `Holding.quantity`/`avgBuyPrice`, all writing
+inside the same `$transaction`** (`lib/transactions/record.ts` is the one place every caller
+builds the row from):
+- `createHolding` writes a `BUY` only on genuinely creating a new position — colliding with
+  an existing (userId, instrument, source) behaves like a correction (same as Edit), not a
+  purchase, and gets no Transaction. No purchase date is collected on this form, so the entry
+  date is what's recorded, an honesty gap flagged via `source` rather than dressed up as a
+  known date.
+- `topUpHolding` writes a `BUY` at the date already collected for the NAV lookup.
+- `applyOneDebit` (SIP) writes a `BUY` tied to its `SipExecution` via
+  `importRef: "SIP_EXEC:<executionId>"` — not by matching amount/date, so a reversal can find
+  and remove exactly this row and no other.
+- `reverseSipExecution` **deletes** that row rather than writing a compensating one.
+  `SipExecution.reversedAt` stays a soft marker because the row is also the cron's
+  idempotency cursor; `Transaction` has no such second job, so the honest ledger fact — this
+  purchase never really settled — is that the row is simply gone, not present-but-flagged for
+  every future sum (XIRR, "total invested") to remember to skip.
+
+**Backfill: `lib/imports/cas-cams-kfintech.ts`**, a pure regex parser (no Prisma import, unit
+tested against a fabricated fixture — never the real file, which stays gitignored under
+`data/cas-raw/` for its PAN/address/mobile) for the CAMS/KFintech Consolidated Account
+Statement layout. Rigid enough to parse without an LLM pass, unlike the general
+broker-export case TODO already scoped separately. Ran it against the real statement
+(`cas-2026-09-11.pdf`, 7 pages, 7 AMCs, 17 folios): **96 transactions, zero unparsed lines**
+on the first clean run.
+
+Two real parsing gotchas, both caught by running it against the actual document rather than
+assumed from TODO's earlier read of it:
+- Every noise marker (`*** Stamp Duty ***`, `***Cancelled***`, `***Address
+  Updated...***`) carries the same leading `DD-Mon-YYYY` date a real purchase line does — the
+  noise patterns needed to allow for that prefix, not anchor on the `***` alone.
+- **A registrar can legitimately post two separate purchases on the same folio, date,
+  description *and* amount** (two SIP instalments processed together — confirmed real, not
+  hypothetical) — TODO had already flagged this shape as "not a dedupe target." The first
+  version of `lineRef` (folio + date + description + amount) collided on exactly these,
+  silently dropping 4 of 96 real transactions as "already imported" on the first run. Fixed
+  by folding in the line's own trailing running-unit-balance column, which does differ between
+  the two, and caught before it shipped by actually reconciling inserted-row counts against
+  the parsed total rather than trusting a green "no errors" run. A regression test pins the
+  fixed behavior.
+
+`lib/db/backfill-cas-transactions.ts` (one-off, run via `jiti` — the repo has neither
+`ts-node` nor `tsx`, and `jiti` was already a transitive dependency) is idempotent:
+`importRef` is the CAS line itself, so re-running it after the `lineRef` fix cleanly replaced
+the 92 rows written by the buggy first run with all 96 correct ones. It never touches
+`Holding` for a fund whose CAS total already matched (5 of 7, exactly, confirmed before
+writing anything): HDFC Flexi Cap, ICICI Healthcare, Invesco Mid Cap, Motilal Oswal Midcap,
+Nippon India Small Cap.
+
+**Two funds didn't match, and the CAS was right.** Bandhan Small Cap (715.693152 →
+707.029 units) and JioBlackRock Flexi Cap (5078.443343 → 5028.821 units) were both
+*overstated* in `Holding`. Taken as ground truth on explicit direction; both `Holding`
+rows corrected down to exactly the CAS's own folio totals, with `avgBuyPrice` recomputed
+from the CAS's own cost-value figures (₹39,000/₹50,500), which independently matched the
+statement's own Portfolio Summary to the rupee.
+
+First guess at the cause — a stale, too-high `SipPlan.amountInr` the cron kept
+over-applying — turned out wrong, caught by checking rather than trusting it: both plans'
+live `amountInr` (₹2,500 each) already matched the real current mandate, independently
+confirmed against the Overview's "Coming up" widget the same day. The actual mechanism
+behind the original drift is unconfirmed (most likely the 2026-07-31 manual reconciliation
+baseline itself was a little high, unrelated to the SIP amount) and isn't worth chasing
+further now that the ledger matches the broker; the earlier write-up's confident wrong
+claim was corrected in both this file and `TODO.md` rather than left standing.
+
+**The 34 stock/ETF holdings** (no source document for any of them in this repo — the CAS is
+CAMS/KFintech, mutual-fund-only) each got one `OPENING_BALANCE` `Transaction` instead: exact
+current quantity/price, dated at the holding's own `createdAt`, so a future sum over
+`Transaction` never needs a special case for "a holding with zero rows," only an honest one
+for "a row that starts with `OPENING_BALANCE`."
+
+Verified: reconciled every `Holding` against the sum of its own `Transaction` rows
+afterward, scoped correctly by `(userId, instrumentId, source)` — a first pass that grouped
+by instrument alone produced 18 false "mismatches" purely from GROWW/PAYTM_MONEY holdings on
+the same instrument being summed together, caught and fixed before trusting the result. The
+one genuine, negligible difference left (ICICI Healthcare, ~0.001 units, sub-paisa rounding
+between the CAS's printed closing balance and the DB's higher-precision running total) was
+left untouched, since only Bandhan and JioBlackRock were in scope for correction. `tsc`,
+`eslint`, all 148 tests (139 + 9 new), `next build` all green.
+
+### XIRR, mutual funds only (2026-09-13)
+
+**A real gap in `Transaction` found before XIRR could even start: no `holdingId`.**
+The model only carried `instrumentId`, and several instruments here sit under two
+different Holdings at once — HDFC Bank, Wipro, ITC, IOB, Tata Motors and TMPV are each
+held via both GROWW and PAYTM_MONEY. A per-holding reader grouping by instrument alone
+would silently merge two unrelated cash-flow streams into one the day either side got
+real dated history. Added `Transaction.holdingId` (nullable, `onDelete: SetNull` so
+deleting a Holding never deletes its own history), backfilled onto all 132 existing rows
+(96 CAS_IMPORT resolved via the one Holding each fund actually has; 36 OPENING_BALANCE
+parsed straight out of their own `importRef`, which already encoded it), and wired into
+every writer (`createHolding`, `topUpHolding`, `applyOneDebit`). Kept even after scope
+narrowed to mutual funds only (below) — it's a correctness fix for the model in general,
+not an equities-XIRR-specific one, and reverting it would leave that merge bug sitting
+there for the next per-holding reader to trip over.
+
+**`createHolding`'s own Transaction row was tagged with the broker (`"GROWW"`, etc.)**,
+inconsistent with every other writer's pipeline tag (`SIP`, `TOPUP`, `CAS_IMPORT`,
+`OPENING_BALANCE`) and indistinguishable at the type level from a trustworthy source.
+Its date is exactly as fabricated as `OPENING_BALANCE`'s (today, not a real purchase
+date — the form collects no date at all), so it now writes `"MANUAL_ENTRY"` instead,
+consistent with the other four.
+
+**`lib/portfolio/xirr.ts`**: Newton-Raphson with a bisection fallback, pure and
+Prisma-free like every other calculation module here. Takes dated, signed cash flows
+(negative = money out, positive = money in) and returns an annual rate or `null` — never
+throws, degrades the same way every provider in this app already does. 11 tests: two
+textbook closed-form cases (a straight 10%/year double-check, and √2−1 for a doubled
+investment over two years — both re-verified against their own NPV, not just a
+hand-typed expected number), a realistic multi-instalment stream, shuffled-order input,
+a loss, and every degenerate case (too few flows, no sign variation, a pathological input
+that must degrade to `null` rather than throw).
+
+**Scope: mutual funds only, on purpose, and not because XIRR "doesn't apply" to
+equities** — it's exactly as valid for a single stock as a fund; every real brokerage
+computes it the same way for both. The reason is data quality: all 34 stock/ETF holdings
+trace their entire history to one `OPENING_BALANCE` stub dated at the row's own
+`createdAt`, not a real purchase date, and a XIRR built on a fabricated date is worse than
+no number at all. `isTrustworthyDateSource()` (`SIP`/`TOPUP`/`CAS_IMPORT` only) is what
+actually enforces this, not an asset-type check — an equity holding becomes eligible the
+day it gets one real dated transaction, automatically, no code change needed. Checked
+against real data before shipping: all 7 mutual funds are 100% `CAS_IMPORT`-sourced, so
+all 7 are eligible today; computed rates ranged 20.36% (Bandhan) to −7.23% (JioBlackRock,
+still very new), combined portfolio-wide 8.37% — all sane given each fund's actual
+absolute return and how recently most of the money went in.
+
+**Where it shows, and why not `/holdings`**: per-fund, in each fund's card on `/funds`
+(next to the existing ₹ and % returns already there), plus one combined figure in the
+page's "Where you stand" stat row (now five columns, was four), captioned "N of M funds"
+since a future ineligible fund shouldn't make the combined number look like it covers
+everything silently. Explicitly *not* added to the Holdings table: with 34 of ~41
+holdings ineligible, that column would be mostly `—`, and the point of gating on data
+quality was to avoid exactly that look of "a number went missing," not manufacture it as
+a table column. A fund with no computable rate omits the line entirely, same reasoning.
+
+Verified: `tsc`, `eslint`, all 159 tests (148 + 11 new), `next build` all green. Real
+numbers checked against the live database with a throwaway script (mirroring
+`getUserFundAnalysis`'s exact logic) before trusting the wired-in version, not just
+inferred from green tests.
+
+### XIRR becomes a real table, with a trailing-window toggle (2026-09-13)
+
+Follow-up the same day: the per-card XIRR line was too scattered, and a single
+since-inception rate wasn't enough. Rebuilt as a proper table plus a 1M/3M/6M/1Y
+toggle, reusing as much of Investments as the shapes allow rather than a parallel
+fund-specific view.
+
+**The table is `HoldingsTable` itself**, not a lookalike. `funds/page.tsx` now also
+calls `getUserPortfolio()` (the same query `/holdings` uses), filters to
+`MUTUAL_FUND`, re-scales `weightPct` to "% of your mutual funds" instead of "% of
+your whole portfolio," and merges in `xirrByWindow` computed by
+`getUserFundAnalysis()`. `HoldingView` gained that field (always `null` from
+`buildPortfolio` - `/holdings` is completely unaffected, confirmed live: the page
+still shows Avg buy/LTP and zero XIRR references). `HoldingsTable` gained a
+`metric: "avgBuy" | "xirr"` prop: in `"xirr"` mode the Avg buy (LTP) column is
+gone entirely and XIRR renders instead **next to P/L**, not in Avg buy's old
+slot - achieved by literally leaving both columns in their original JSX source
+order and conditionally rendering each one, so only one ever mounts and the
+other's slot in the row just doesn't exist, no manual reordering logic needed.
+Sorting, the mobile card layout, and every action (Top up, Edit, Delete) are the
+exact same code path for a fund row as for a stock row - a mutual fund shown here
+is still a real `Holding`.
+
+**The trailing-window toggle needed real new math, not just a UI control.** A
+"6M XIRR" isn't "flows from the last 6 months" - it has to price whatever
+position already existed *going into* the window, or a fund bought a year ago
+and merely held flat for the last 6 months would show as if nothing happened.
+`lib/funds/xirr-window.ts` (pure, 10 new tests) replays the Transaction ledger
+to find the quantity held at the window's start, then needs a NAV as of that
+past date to value it - which the local `Price` table can't provide (it only
+starts 2026-06-29) but the existing `mfapi.in` NAV-history provider can, since
+it already serves years of data for exactly this kind of lookup (the SIP/top-up
+paths already use it, just walking the other direction in time).
+`resolveNavAsOf()` is `resolveAllotmentNav()`'s mirror: "the NAV on or before"
+instead of "on or after."
+
+**One cross-request cache, not one fetch per page view.** Asked directly before
+building: fetch NAV history live (accurate, adds latency) or use only local
+`Price` data (instant, but too short for anything past ~1M today)? Chose live
+fetch with a cache. `getCachedNavHistory()` is a `globalThis`-scoped `Map`
+keyed by scheme code with a 12h TTL - long enough that NAVs (which publish at
+most once a day) don't need re-fetching every visit, short enough that a stale
+figure doesn't sit for a full day. Degrades to the last good cached copy on a
+fetch failure rather than blanking out, the same contract every provider here
+already follows. Measured live: first `/funds` load after a code change (cold
+cache) took ~5.8s for the 7 parallel fetches; the very next load was ~1.3s.
+
+**Windows offered: 1M, 3M, 6M, 1Y, All** - a deliberate subset of the net-worth
+trend chart's own range list (`lib/networth/trend-range.ts`, reused rather than
+re-defining day counts), skipping 1W (too noisy to annualize) and 3Y/5Y (every
+fund held here is under 18 months old, so those would report "not enough data"
+for all seven today - pure clutter for zero payoff, though nothing in the math
+stops adding them once it'd actually show something).
+
+**One toggle, not two that could drift.** The combined "XIRR" stat above the
+table and the table's own per-fund column read the same selected window, owned
+by one new client component (`components/funds/fund-xirr-section.tsx`) rather
+than two independent controls - the exact reasoning `PortfolioTrends` already
+settled for the net-worth/returns charts, applied here on purpose rather than
+re-litigated.
+
+Verified end to end against the live app, not just the unit tests: seeded a
+temporary session, drove the real page in a real browser, screenshotted the
+default "All" view (combined +8.37%, matching the number from the previous
+entry exactly), clicked "3M," and confirmed both the combined stat (+11.90%)
+and every per-fund XIRR cell in the table recomputed correctly - JioBlackRock
+-8.82%, Bandhan +27.92%, Nippon +32.98%, and so on, each a sane trailing figure
+given how recently that fund's money actually went in. `tsc`, `eslint`, all
+169 tests (159 + 10 new), `next build` all green.

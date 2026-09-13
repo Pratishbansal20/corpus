@@ -20,7 +20,14 @@ describe("encrypt / decrypt", () => {
   });
 
   it("rejects tampered ciphertext", () => {
+    // Guaranteed to actually change the last character, unlike a literal
+    // ct.replace(/.$/, "X"): base64 has 64 possible symbols, so about 1 run
+    // in 64 the real last character already is "X", the "tamper" is a no-op,
+    // and decrypt() correctly succeeds - a flaky failure with nothing wrong
+    // in encrypt()/decrypt() themselves. Confirmed by hitting it in CI.
     const ct = encrypt("secret");
-    expect(() => decrypt(ct.replace(/.$/, "X"))).toThrow();
+    const lastChar = ct.at(-1);
+    const tampered = ct.slice(0, -1) + (lastChar === "A" ? "B" : "A");
+    expect(() => decrypt(tampered)).toThrow();
   });
 });

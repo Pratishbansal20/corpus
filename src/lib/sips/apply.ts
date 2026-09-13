@@ -7,6 +7,7 @@ import {
 } from "@/lib/portfolio/providers/mfapi-nav-history";
 import { dueDatesBetween } from "./schema";
 import { blendedAverage, unitsForAmount } from "./math";
+import { recordTransaction } from "@/lib/transactions/record";
 
 /**
  * Applying SIP debits to holdings.
@@ -228,7 +229,9 @@ async function applyOneDebit(
       },
     });
 
+    let holdingId: string;
     if (existing) {
+      holdingId = existing.id;
       await tx.holding.update({
         where: { id: existing.id },
         data: {
@@ -244,7 +247,7 @@ async function applyOneDebit(
     } else {
       // First debit into a fund with no position yet: the average is the NAV
       // the units were bought at.
-      await tx.holding.create({
+      const created = await tx.holding.create({
         data: {
           userId: plan.userId,
           instrumentId: plan.instrumentId,
@@ -253,6 +256,7 @@ async function applyOneDebit(
           source: plan.source,
         },
       });
+      holdingId = created.id;
     }
 
     // The cash side. A SIP is a transfer, not income: the same rupees leave the
@@ -277,7 +281,7 @@ async function applyOneDebit(
       });
     }
 
-    await tx.sipExecution.create({
+    const execution = await tx.sipExecution.create({
       data: {
         sipPlanId: plan.id,
         dueDate,
@@ -289,6 +293,20 @@ async function applyOneDebit(
         bankAccountId: plan.bankAccountId,
         bankDebitedInr: plan.bankAccountId ? amount : null,
       },
+    });
+
+    // Tied to this execution via importRef (not dueDate/plan) so a reversal
+    // can find and remove exactly this row without touching any other.
+    await recordTransaction(tx, {
+      userId: plan.userId,
+      instrumentId: plan.instrumentId,
+      holdingId,
+      quantity: units,
+      pricePerUnit: nav,
+      amount,
+      date: dueDate,
+      source: "SIP",
+      importRef: `SIP_EXEC:${execution.id}`,
     });
 
     return { units: units.toNumber() };

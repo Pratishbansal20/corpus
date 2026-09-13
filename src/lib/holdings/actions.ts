@@ -11,6 +11,7 @@ import {
   fetchNavHistory,
   resolveAllotmentNav,
 } from "@/lib/portfolio/providers/mfapi-nav-history";
+import { recordTransaction } from "@/lib/transactions/record";
 
 export type HoldingActionState = {
   status: "idle" | "success" | "error";
@@ -87,24 +88,46 @@ export async function createHolding(
   const data = parsed.data;
   const source = data.source?.trim() || "MANUAL";
   const instrumentId = await resolveInstrumentId(data);
+  const quantity = new Prisma.Decimal(String(data.quantity));
+  const avgBuyPrice = new Prisma.Decimal(String(data.avgBuyPrice));
 
   // Upsert on (userId, instrumentId, source): adding the same instrument/source
-  // updates the existing position rather than creating a duplicate.
-  await prisma.holding.upsert({
+  // updates the existing position rather than creating a duplicate. Only the
+  // create branch is a real purchase worth a Transaction row - hitting the
+  // update branch means this form was used to re-enter an already-held
+  // position, which behaves like a correction (same as Edit), not a buy.
+  const existing = await prisma.holding.findUnique({
     where: {
       userId_instrumentId_source: { userId: user.id, instrumentId, source },
     },
-    create: {
-      userId: user.id,
-      instrumentId,
-      source,
-      quantity: new Prisma.Decimal(String(data.quantity)),
-      avgBuyPrice: new Prisma.Decimal(String(data.avgBuyPrice)),
-    },
-    update: {
-      quantity: new Prisma.Decimal(String(data.quantity)),
-      avgBuyPrice: new Prisma.Decimal(String(data.avgBuyPrice)),
-    },
+  });
+
+  await prisma.$transaction(async (tx) => {
+    const holding = await tx.holding.upsert({
+      where: {
+        userId_instrumentId_source: { userId: user.id, instrumentId, source },
+      },
+      create: { userId: user.id, instrumentId, source, quantity, avgBuyPrice },
+      update: { quantity, avgBuyPrice },
+    });
+
+    if (!existing) {
+      // No real purchase date is collected on this form, so the entry date
+      // is what gets recorded, not a real purchase date - flagged via a
+      // distinct pipeline tag ("MANUAL_ENTRY", not the broker in `source`)
+      // so a reader like XIRR eligibility can tell a trustworthy date from a
+      // fabricated one without guessing from the broker name.
+      await recordTransaction(tx, {
+        userId: user.id,
+        instrumentId,
+        holdingId: holding.id,
+        quantity,
+        pricePerUnit: avgBuyPrice,
+        amount: quantity.times(avgBuyPrice),
+        date: new Date(),
+        source: "MANUAL_ENTRY",
+      });
+    }
   });
 
   revalidatePath("/holdings");
@@ -296,6 +319,17 @@ export async function topUpHolding(
         data: { balanceInr: { decrement: spent } },
       });
     }
+
+    await recordTransaction(tx, {
+      userId: user.id,
+      instrumentId: holding.instrumentId,
+      holdingId: holding.id,
+      quantity: addedUnits,
+      pricePerUnit: addedUnits.isZero() ? null : spent.div(addedUnits),
+      amount: spent,
+      date: parseUtcDate(d.date) ?? new Date(),
+      source: "TOPUP",
+    });
   });
 
   revalidatePath("/holdings");
