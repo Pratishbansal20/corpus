@@ -103,7 +103,12 @@ export function computeXirr(flows: CashFlow[]): number | null {
 // produce a number that looks precise and is actually fiction. Exported so
 // the one caller that needs it (lib/funds/queries.ts) doesn't have to guess
 // at which source strings are safe.
-const TRUSTWORTHY_DATE_SOURCES = new Set(["SIP", "TOPUP", "CAS_IMPORT"]);
+const TRUSTWORTHY_DATE_SOURCES = new Set([
+  "SIP",
+  "TOPUP",
+  "CAS_IMPORT",
+  "BROKER_IMPORT", // dated lots read off the broker's own transaction history
+]);
 
 export function isTrustworthyDateSource(source: string): boolean {
   return TRUSTWORTHY_DATE_SOURCES.has(source);
