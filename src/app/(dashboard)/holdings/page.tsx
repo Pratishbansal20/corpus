@@ -30,7 +30,9 @@ export default async function HoldingsPage() {
   ]);
 
   const hasUsHolding = holdings.some((h) => h.country === "US");
-  const consolidation = consolidateBySource(holdings);
+  const consolidation = consolidateBySource(holdings, {
+    splitGrowwEquityAndFunds: true,
+  });
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6">
@@ -57,7 +59,7 @@ export default async function HoldingsPage() {
                 <CardTitle className="text-base">By app</CardTitle>
                 <CardDescription>Where your investments live</CardDescription>
               </CardHeader>
-              <CardContent className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <CardContent className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 {consolidation.groups.map((g) => (
                   <div
                     key={g.source}

@@ -30,13 +30,34 @@ export type AppConsolidation = {
 
 // "Where do my investments live?": collapse holdings by the app/broker they
 // came from, so the user sees Groww vs Paytm Money vs INDmoney at a glance.
-export function consolidateBySource(holdings: HoldingView[]): AppConsolidation {
+export type ConsolidationOptions = {
+  // Split Groww into "Groww equity (and ETFs)" and "Groww mutual funds", the
+  // two very different books held there. Off by default so the dashboard and
+  // PDF report keep one box per app.
+  splitGrowwEquityAndFunds?: boolean;
+};
+
+function groupKey(h: HoldingView, split: boolean): { key: string; label: string } {
+  if (split && h.source === "GROWW") {
+    return h.type === "MUTUAL_FUND"
+      ? { key: "GROWW:MF", label: "Groww mutual funds" }
+      : { key: "GROWW:EQUITY", label: "Groww equity (and ETFs)" };
+  }
+  return { key: h.source, label: sourceLabel(h.source) };
+}
+
+export function consolidateBySource(
+  holdings: HoldingView[],
+  options: ConsolidationOptions = {},
+): AppConsolidation {
   const bySource = new Map<string, AppGroup>();
+  const split = options.splitGrowwEquityAndFunds ?? false;
 
   for (const h of holdings) {
-    const g = bySource.get(h.source) ?? {
-      source: h.source,
-      label: sourceLabel(h.source),
+    const { key, label } = groupKey(h, split);
+    const g = bySource.get(key) ?? {
+      source: key,
+      label,
       valueInr: 0,
       investedInr: 0,
       pnlInr: 0,
@@ -48,7 +69,7 @@ export function consolidateBySource(holdings: HoldingView[]): AppConsolidation {
     g.investedInr += h.investedInr;
     g.pnlInr += h.pnlInr;
     g.count += 1;
-    bySource.set(h.source, g);
+    bySource.set(key, g);
   }
 
   const totalValueInr = holdings.reduce((a, h) => a + h.currentValueInr, 0);
